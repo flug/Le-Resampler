@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sample Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="toolbar">
+    <button id="btn-add-folder">+ Add Folder</button>
+    <button id="export-btn" disabled>Exporter</button>
+    <input id="search" type="text" placeholder="Search by filename…">
+    <select id="filter-category">
+      <option value="">All Categories</option>
+      <option value="kick">Kick</option>
+      <option value="snare">Snare</option>
+      <option value="hat">Hat</option>
+      <option value="loop">Loop</option>
+      <option value="vocal">Vocal</option>
+      <option value="fx">FX</option>
+      <option value="bass">Bass</option>
+      <option value="perc">Perc</option>
+    </select>
+    <select id="filter-tag"><option value="">All Tags</option></select>
+    <span id="sample-count"></span>
+    <div id="progress-wrap" hidden>
+      <progress id="progress" max="100" value="0"></progress>
+      <span id="progress-label">Scanning…</span>
+    </div>
+  </header>
+
+  <main>
+    <table id="sample-table">
+      <thead>
+        <tr>
+          <th class="col-select"><input type="checkbox" id="select-all" title="Tout sélectionner"></th>
+          <th>Filename</th>
+          <th>Category</th>
+          <th>BPM</th>
+          <th>Key</th>
+          <th>Duration</th>
+          <th>Type</th>
+          <th>Tags</th>
+        </tr>
+      </thead>
+      <tbody id="sample-list"></tbody>
+    </table>
+    <div id="empty-state">No samples yet — click "Add Folder" to scan your library.</div>
+  </main>
+
+  <footer id="player-bar">
+    <span id="now-playing">—</span>
+    <button id="btn-stop" disabled>■ Stop</button>
+  </footer>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

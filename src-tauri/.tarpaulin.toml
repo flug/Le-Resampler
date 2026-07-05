@@ -1,0 +1,7 @@
+[tarpaulin]
+lib           = true
+exclude_files = ["src/commands.rs", "src/lib.rs", "src/main.rs"]
+fail_under    = 100
+timeout       = "120"
+out           = ["Xml", "Html"]
+output-dir    = "target/tarpaulin"
