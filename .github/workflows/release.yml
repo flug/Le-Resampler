@@ -2,14 +2,14 @@ name: Release
 
 on:
   schedule:
-    - cron: '0 8 * * 1' # Tous les lundis à 8h UTC
-  workflow_dispatch:     # Déclenchement manuel possible
+    - cron: '0 8 * * 1' # Every Monday at 08:00 UTC
+  workflow_dispatch:     # Manual trigger
 
 permissions:
   contents: write
 
 jobs:
-  # ── 1. Vérifie s'il y a des commits depuis le dernier tag ────────────────
+  # ── 1. Check for new commits since last tag ───────────────────────────────
   check:
     runs-on: ubuntu-latest
     outputs:
@@ -22,20 +22,20 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Vérifier les commits depuis le dernier tag
+      - name: Check commits since last tag
         id: check
         run: |
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           if [ -z "$LAST_TAG" ]; then
-            echo "Aucun tag précédent — première release"
+            echo "No previous tag — triggering first release"
             echo "should_release=true" >> $GITHUB_OUTPUT
           else
             COUNT=$(git log "$LAST_TAG..HEAD" --oneline | wc -l | tr -d ' ')
-            echo "$COUNT commit(s) depuis $LAST_TAG"
+            echo "$COUNT commit(s) since $LAST_TAG"
             [ "$COUNT" -gt 0 ] && echo "should_release=true" >> $GITHUB_OUTPUT || echo "should_release=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Incrémenter la version (patch)
+      - name: Bump patch version
         id: bump
         if: steps.check.outputs.should_release == 'true'
         run: |
@@ -46,18 +46,16 @@ jobs:
           NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "tag=v$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $CURRENT → $NEW_VERSION"
+          echo "Version: $CURRENT -> $NEW_VERSION"
 
-      - name: Mettre à jour tauri.conf.json et Cargo.toml
+      - name: Update tauri.conf.json and Cargo.toml
         if: steps.check.outputs.should_release == 'true'
         run: |
           VERSION=${{ steps.bump.outputs.version }}
-          # tauri.conf.json
           jq ".version = \"$VERSION\"" src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
-          # Cargo.toml (première ligne version = "x.y.z")
           sed -i "0,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
 
-      - name: Commiter et tagger la nouvelle version
+      - name: Commit and tag new version
         if: steps.check.outputs.should_release == 'true'
         run: |
           git config user.name "github-actions[bot]"
@@ -67,7 +65,7 @@ jobs:
           git tag ${{ steps.bump.outputs.tag }}
           git push origin main --tags
 
-  # ── 2. Build multi-plateforme ─────────────────────────────────────────────
+  # ── 2. Multi-platform build ───────────────────────────────────────────────
   build:
     needs: check
     if: needs.check.outputs.should_release == 'true'
@@ -93,7 +91,7 @@ jobs:
         with:
           ref: ${{ needs.check.outputs.tag }}
 
-      - name: Rust stable
+      - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
@@ -102,7 +100,7 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Dépendances Linux
+      - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
@@ -117,22 +115,22 @@ jobs:
         with:
           projectPath: src-tauri
           tagName: ${{ needs.check.outputs.tag }}
-          releaseName: Sampli ${{ needs.check.outputs.tag }}
+          releaseName: Le Resampler ${{ needs.check.outputs.tag }}
           releaseBody: |
-            ## Sampli ${{ needs.check.outputs.tag }}
+            ## Le Resampler ${{ needs.check.outputs.tag }}
 
-            Release automatique hebdomadaire.
-            Voir l'[historique des commits](https://github.com/${{ github.repository }}/commits/main) pour le détail des changements.
+            Automatic weekly release.
+            See the [commit history](https://github.com/${{ github.repository }}/commits/main) for details.
 
-            ## Téléchargements
+            ## Downloads
 
-            | Plateforme | Fichier |
-            |------------|---------|
-            | macOS (Universal — Apple Silicon + Intel) | `Sample Manager_*_universal.dmg` |
-            | Windows | `Sample Manager_*_x64-setup.exe` |
-            | Linux | `sample-manager_*_amd64.AppImage` |
+            | Platform | File |
+            |----------|------|
+            | macOS (Universal — Apple Silicon + Intel) | `Le Resampler_*_universal.dmg` |
+            | Windows | `Le Resampler_*_x64-setup.exe` |
+            | Linux | `le-resampler_*_amd64.AppImage` |
 
-            ## Installation macOS via Homebrew
+            ## macOS — Homebrew
 
             ```bash
             brew tap flugv1/Le-Resampler https://github.com/flugv1/Le-Resampler
@@ -144,7 +142,7 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-  # ── 3. Mettre à jour le cask Homebrew dans ce repo ──────────────────────
+  # ── 3. Update Homebrew cask in this repo ─────────────────────────────────
   homebrew:
     needs: [check, build]
     if: needs.check.outputs.should_release == 'true'
@@ -156,7 +154,7 @@ jobs:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Calculer le SHA256 du DMG
+      - name: Compute DMG SHA256
         id: sha
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -175,7 +173,7 @@ jobs:
           echo "sha256=$(shasum -a 256 app.dmg | awk '{print $1}')" >> $GITHUB_OUTPUT
           echo "skip=false" >> $GITHUB_OUTPUT
 
-      - name: Écrire le cask et commiter
+      - name: Write cask and commit
         if: steps.sha.outputs.skip == 'false'
         env:
           VERSION: ${{ needs.check.outputs.version }}
