@@ -103,10 +103,7 @@ pub async fn stop_preview(player: State<'_, Arc<AudioPlayer>>) -> Result<(), Str
 }
 
 #[tauri::command]
-pub async fn set_volume(
-    volume: f32,
-    player: State<'_, Arc<AudioPlayer>>,
-) -> Result<(), String> {
+pub async fn set_volume(volume: f32, player: State<'_, Arc<AudioPlayer>>) -> Result<(), String> {
     player.set_volume(volume)
 }
 

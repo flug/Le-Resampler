@@ -36,13 +36,8 @@ pub fn run() {
             app.manage(Arc::new(player));
 
             // Menu natif
-            let about_item = MenuItem::with_id(
-                app,
-                "about",
-                "About Le Resampler",
-                true,
-                None::<&str>,
-            )?;
+            let about_item =
+                MenuItem::with_id(app, "about", "About Le Resampler", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;
             let buymecoffee = MenuItem::with_id(
                 app,
@@ -52,12 +47,8 @@ pub fn run() {
                 None::<&str>,
             )?;
 
-            let help_menu = Submenu::with_items(
-                app,
-                "Help",
-                true,
-                &[&about_item, &separator, &buymecoffee],
-            )?;
+            let help_menu =
+                Submenu::with_items(app, "Help", true, &[&about_item, &separator, &buymecoffee])?;
 
             let menu = Menu::with_items(app, &[&help_menu])?;
             app.set_menu(menu)?;
@@ -77,11 +68,8 @@ pub fn run() {
                     .ok();
                 }
                 "buymecoffee" => {
-                    tauri_plugin_opener::open_url(
-                        "https://buymeacoffee.com/flugv1t",
-                        None::<&str>,
-                    )
-                    .ok();
+                    tauri_plugin_opener::open_url("https://buymeacoffee.com/flugv1t", None::<&str>)
+                        .ok();
                 }
                 _ => {}
             });
