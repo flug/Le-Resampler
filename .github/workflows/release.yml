@@ -135,8 +135,8 @@ jobs:
             ## Installation macOS via Homebrew
 
             ```bash
-            brew tap flugv1/sampli
-            brew install --cask sampli
+            brew tap flugv1/Le-Resampler https://github.com/flugv1/Le-Resampler
+            brew install --cask le-resampler
             ```
 
             [![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/flugv1t)
@@ -144,70 +144,66 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-  # ── 3. Mettre à jour le tap Homebrew ─────────────────────────────────────
+  # ── 3. Mettre à jour le cask Homebrew dans ce repo ──────────────────────
   homebrew:
     needs: [check, build]
     if: needs.check.outputs.should_release == 'true'
     runs-on: ubuntu-latest
-    name: Update Homebrew tap
+    name: Update Homebrew cask
     steps:
-      - name: Récupérer le DMG et calculer le SHA256
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calculer le SHA256 du DMG
         id: sha
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.check.outputs.tag }}
-          VERSION: ${{ needs.check.outputs.version }}
           REPO: ${{ github.repository }}
         run: |
-          # Attendre que les assets soient disponibles
           sleep 60
-          # Trouver l'URL du DMG universal via l'API GitHub
           DMG_URL=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
             "https://api.github.com/repos/$REPO/releases/tags/$TAG" \
             | jq -r '.assets[] | select(.name | test("universal\\.dmg$")) | .browser_download_url')
           if [ -z "$DMG_URL" ] || [ "$DMG_URL" = "null" ]; then
-            echo "DMG introuvable, skip Homebrew update"
             echo "skip=true" >> $GITHUB_OUTPUT
             exit 0
           fi
-          curl -L -o sampli.dmg "$DMG_URL"
-          SHA256=$(shasum -a 256 sampli.dmg | awk '{print $1}')
-          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
-          echo "dmg_url=$DMG_URL" >> $GITHUB_OUTPUT
+          curl -L -o app.dmg "$DMG_URL"
+          echo "sha256=$(shasum -a 256 app.dmg | awk '{print $1}')" >> $GITHUB_OUTPUT
           echo "skip=false" >> $GITHUB_OUTPUT
 
-      - name: Mettre à jour le cask dans le tap
+      - name: Écrire le cask et commiter
         if: steps.sha.outputs.skip == 'false'
         env:
-          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
           VERSION: ${{ needs.check.outputs.version }}
           SHA256: ${{ steps.sha.outputs.sha256 }}
           REPO: ${{ github.repository }}
         run: |
-          git clone "https://x-access-token:${TAP_TOKEN}@github.com/flugv1/homebrew-sampli.git" tap
-          mkdir -p tap/Casks
-          cat > tap/Casks/sampli.rb << EOF
-          cask "sampli" do
+          mkdir -p Casks
+          cat > Casks/le-resampler.rb << EOF
+          cask "le-resampler" do
             version "${VERSION}"
             sha256 "${SHA256}"
 
-            url "https://github.com/${REPO}/releases/download/v#{version}/Sample%20Manager_#{version}_universal.dmg"
-            name "Sampli"
-            desc "Desktop sample manager for audio producers and Akai MPC users"
+            url "https://github.com/${REPO}/releases/download/v#{version}/Le%20Resampler_#{version}_universal.dmg"
+            name "Le Resampler"
+            desc "Audio sample manager for music producers and Akai MPC Sample users"
             homepage "https://github.com/${REPO}"
 
-            app "Sample Manager.app"
+            app "Le Resampler.app"
 
             zap trash: [
-              "~/Library/Application Support/com.sampli.sample-manager",
-              "~/Library/Preferences/com.sampli.sample-manager.plist",
+              "~/Library/Application Support/com.sampli.leresampler",
+              "~/Library/Preferences/com.sampli.leresampler.plist",
             ]
           end
           EOF
 
-          cd tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/sampli.rb
-          git diff --cached --quiet || git commit -m "chore: update sampli to ${VERSION}"
+          git add Casks/le-resampler.rb
+          git diff --cached --quiet || git commit -m "chore: update Homebrew cask to ${VERSION}"
           git push

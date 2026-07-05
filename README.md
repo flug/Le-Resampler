@@ -29,8 +29,8 @@ Built with [Tauri](https://tauri.app/) (Rust + Vanilla JS): lightweight, native,
 ### macOS — Homebrew
 
 ```bash
-brew tap flugv1/sampli
-brew install --cask sampli
+brew tap flugv1/Le-Resampler https://github.com/flugv1/Le-Resampler
+brew install --cask le-resampler
 ```
 
 ### Windows & Linux
