@@ -6,6 +6,7 @@ let samples = [];
 let playingPath = null;
 let scanning = false;
 let selectedIds = new Set();
+let autoPlay = false;
 
 // --- DOM refs ---
 const sampleList = document.getElementById('sample-list');
@@ -14,15 +15,16 @@ const sampleTable = document.getElementById('sample-table');
 const filterCategory = document.getElementById('filter-category');
 const filterTag = document.getElementById('filter-tag');
 const searchInput = document.getElementById('search');
-const progressWrap = document.getElementById('progress-wrap');
-const progressEl = document.getElementById('progress');
-const progressLabel = document.getElementById('progress-label');
 const sampleCount = document.getElementById('sample-count');
 const nowPlaying = document.getElementById('now-playing');
 const btnStop = document.getElementById('btn-stop');
+const volumeSlider = document.getElementById('volume-slider');
 const btnAddFolder = document.getElementById('btn-add-folder');
-const btnExport = document.getElementById('export-btn');
+const btnRefresh = document.getElementById('btn-refresh');
+const exportFab = document.getElementById('export-fab');
+const exportFabLabel = document.getElementById('export-fab-label');
 const selectAll = document.getElementById('select-all');
+const autoplayCb = document.getElementById('autoplay-cb');
 
 // --- Error toast ---
 function showError(msg) {
@@ -39,24 +41,20 @@ function showError(msg) {
 
 // --- Scan progress events ---
 await listen('scan-progress', (event) => {
-  const { current, total, filename } = event.payload;
-  progressWrap.hidden = false;
-  progressEl.max = total || 1;
-  progressEl.value = current;
-  progressLabel.textContent = `${current}/${total}${filename ? ': ' + filename : ''}`;
+  const { current, total } = event.payload;
+  sampleCount.textContent = `Scanning… ${current}/${total}`;
 });
 
 await listen('scan-complete', (event) => {
-  const { added, skipped } = event.payload;
-  progressWrap.hidden = true;
+  const { added } = event.payload;
   scanning = false;
   btnAddFolder.disabled = false;
+  btnRefresh.disabled = false;
   loadSamples();
   loadTags();
-  // Brief status in count area
   const prev = sampleCount.textContent;
   sampleCount.textContent = `+${added} added`;
-  setTimeout(() => { sampleCount.textContent = prev; loadSamples(); }, 1500);
+  setTimeout(() => { sampleCount.textContent = prev; loadSamples(); }, 2000);
 });
 
 // --- Add folder button ---
@@ -66,14 +64,11 @@ btnAddFolder.addEventListener('click', async () => {
     if (!folder) return;
     scanning = true;
     btnAddFolder.disabled = true;
-    progressWrap.hidden = false;
-    progressEl.value = 0;
-    progressLabel.textContent = 'Starting scan…';
+    sampleCount.textContent = 'Scanning…';
     await invoke('scan_folder', { path: folder });
   } catch (e) {
     scanning = false;
     btnAddFolder.disabled = false;
-    progressWrap.hidden = true;
     showError('Scan error: ' + e);
   }
 });
@@ -119,6 +114,27 @@ function renderSamples() {
     cb.addEventListener('change', () => toggleSelection(s.id, cb.checked));
     cb.addEventListener('click', e => e.stopPropagation());
     selectTd.appendChild(cb);
+
+    // Bouton lecture
+    const playTd = document.createElement('td');
+    playTd.className = 'col-play';
+    const btnPlay = document.createElement('button');
+    btnPlay.className = 'btn-play-row' + (s.path === playingPath ? ' playing' : '');
+    btnPlay.title = s.path === playingPath ? 'Stop' : 'Preview';
+    btnPlay.textContent = s.path === playingPath ? '■' : '▶';
+    btnPlay.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (s.path === playingPath) {
+        await invoke('stop_preview');
+        playingPath = null;
+        nowPlaying.textContent = '—';
+        btnStop.disabled = true;
+      } else {
+        await previewSample(s.path, s.filename);
+      }
+      renderSamples();
+    });
+    playTd.appendChild(btnPlay);
     const categoryOptions = ['', 'kick', 'snare', 'hat', 'loop', 'vocal', 'fx', 'bass', 'perc']
       .map(c => `<option value="${c}" ${s.category === c ? 'selected' : ''}>${c || '—'}</option>`)
       .join('');
@@ -140,12 +156,12 @@ function renderSamples() {
       <td class="tags-cell">${tagsHtml}<input class="add-tag" type="text" placeholder="+ tag" data-id="${s.id}"></td>
     `;
     tr.appendChild(selectTd);
+    tr.appendChild(playTd);
     tr.appendChild(contentDiv.content);
 
-    // Row click → preview (ignore clicks on inputs/selects/buttons)
     tr.addEventListener('click', (e) => {
       if (['INPUT', 'SELECT', 'BUTTON'].includes(e.target.tagName)) return;
-      previewSample(s.path, s.filename);
+      if (autoPlay) previewSample(s.path, s.filename);
     });
 
     sampleList.appendChild(tr);
@@ -283,6 +299,45 @@ document.addEventListener('keydown', async (e) => {
   }
 });
 
+// Volume slider
+volumeSlider.addEventListener('input', async () => {
+  try {
+    await invoke('set_volume', { volume: parseFloat(volumeSlider.value) });
+  } catch (e) {
+    showError('Volume error: ' + e);
+  }
+});
+
+// Appliquer le volume initial au démarrage
+invoke('set_volume', { volume: parseFloat(volumeSlider.value) }).catch(() => {});
+
+// --- Refresh button ---
+btnRefresh.addEventListener('click', async () => {
+  if (scanning) return;
+  try {
+    const folders = await invoke('get_watched_folders');
+    if (folders.length === 0) {
+      showToast('No folders saved yet.');
+      return;
+    }
+    scanning = true;
+    btnAddFolder.disabled = true;
+    btnRefresh.disabled = true;
+    sampleCount.textContent = 'Scanning…';
+    for (const folder of folders) {
+      await invoke('scan_folder', { path: folder });
+    }
+  } catch (e) {
+    showError('Refresh error: ' + e);
+    scanning = false;
+    btnAddFolder.disabled = false;
+    btnRefresh.disabled = false;
+  }
+});
+
+// --- Auto-play toggle ---
+autoplayCb.addEventListener('change', () => { autoPlay = autoplayCb.checked; });
+
 // --- Filters ---
 filterCategory.addEventListener('change', loadSamples);
 filterTag.addEventListener('change', loadSamples);
@@ -322,8 +377,8 @@ function updateMasterCheckbox() {
 
 function updateExportButton() {
   const n = selectedIds.size;
-  btnExport.disabled = n === 0;
-  btnExport.textContent = n > 0 ? `Exporter (${n})` : 'Exporter';
+  exportFab.hidden = n === 0;
+  exportFabLabel.textContent = `Export (${n})`;
 }
 
 selectAll.addEventListener('change', () => {
@@ -342,22 +397,23 @@ async function exportSamples() {
     .filter(s => selectedIds.has(s.id))
     .map(s => ({ path: s.path, category: s.category, tags: s.tags }));
 
-  btnExport.disabled = true;
+  exportFab.disabled = true;
   try {
     const r = await invoke('copy_samples_to', { dest, samples: entries });
-    const msg = `✓ ${r.copied} sample(s) copié(s)${r.skipped ? `, ${r.skipped} ignoré(s)` : ''}`;
+    const msg = `✓ ${r.copied} sample(s) copied${r.skipped ? `, ${r.skipped} skipped` : ''}`;
     showToast(msg);
     if (r.errors.length > 0) {
-      showError(`Erreurs lors de l'export :\n${r.errors.slice(0, 3).join('\n')}`);
+      showError(`Export errors:\n${r.errors.slice(0, 3).join('\n')}`);
     }
   } catch (e) {
-    showError('Erreur export : ' + e);
+    showError('Export error: ' + e);
   } finally {
+    exportFab.disabled = false;
     updateExportButton();
   }
 }
 
-btnExport.addEventListener('click', exportSamples);
+exportFab.addEventListener('click', exportSamples);
 
 // --- Toast success ---
 function showToast(msg) {

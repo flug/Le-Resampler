@@ -52,6 +52,10 @@ impl DbPool {
                 tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
                 PRIMARY KEY (sample_id, tag_id)
             );
+            CREATE TABLE IF NOT EXISTS folders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                path TEXT NOT NULL UNIQUE
+            );
             ",
         )?;
         Ok(())
@@ -203,6 +207,22 @@ impl DbPool {
     pub fn get_all_tags(&self) -> Result<Vec<String>> {
         let conn = self.0.lock().unwrap();
         let mut stmt = conn.prepare("SELECT name FROM tags ORDER BY name")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        rows.collect()
+    }
+
+    pub fn add_folder(&self, path: &str) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO folders (path) VALUES (?1)",
+            params![path],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_folders(&self) -> Result<Vec<String>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT path FROM folders ORDER BY path")?;
         let rows = stmt.query_map([], |r| r.get(0))?;
         rows.collect()
     }
@@ -405,6 +425,38 @@ mod tests {
         db.remove_tag(id, "warm").unwrap();
         let results = db.list_samples(None, Some("warm"), None).unwrap();
         assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn add_folder_stores_path() {
+        let db = make_db();
+        db.add_folder("/music/samples").unwrap();
+        let folders = db.get_folders().unwrap();
+        assert_eq!(folders, vec!["/music/samples"]);
+    }
+
+    #[test]
+    fn add_folder_idempotent() {
+        let db = make_db();
+        db.add_folder("/music/samples").unwrap();
+        db.add_folder("/music/samples").unwrap();
+        let folders = db.get_folders().unwrap();
+        assert_eq!(folders.len(), 1);
+    }
+
+    #[test]
+    fn get_folders_ordered_alphabetically() {
+        let db = make_db();
+        db.add_folder("/z/folder").unwrap();
+        db.add_folder("/a/folder").unwrap();
+        let folders = db.get_folders().unwrap();
+        assert_eq!(folders, vec!["/a/folder", "/z/folder"]);
+    }
+
+    #[test]
+    fn get_folders_empty() {
+        let db = make_db();
+        assert_eq!(db.get_folders().unwrap().len(), 0);
     }
 
     #[test]

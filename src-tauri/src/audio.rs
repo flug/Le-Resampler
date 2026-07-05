@@ -8,6 +8,7 @@ use std::thread;
 enum AudioCmd {
     Play(String),
     Stop,
+    SetVolume(f32),
     Shutdown,
 }
 
@@ -36,6 +37,12 @@ impl AudioPlayer {
     pub fn stop(&self) -> Result<(), String> {
         self.tx
             .try_send(AudioCmd::Stop)
+            .map_err(|e| format!("Audio channel error: {}", e))
+    }
+
+    pub fn set_volume(&self, volume: f32) -> Result<(), String> {
+        self.tx
+            .try_send(AudioCmd::SetVolume(volume))
             .map_err(|e| format!("Audio channel error: {}", e))
     }
 }
@@ -78,6 +85,7 @@ fn audio_thread(rx: mpsc::Receiver<AudioCmd>) {
                 match Decoder::try_from(BufReader::new(file)) {
                     Ok(decoder) => {
                         player.append(decoder);
+                        player.play();
                         log::debug!("Playing: {}", path);
                     }
                     Err(e) => {
@@ -88,6 +96,10 @@ fn audio_thread(rx: mpsc::Receiver<AudioCmd>) {
             AudioCmd::Stop => {
                 player.clear();
                 log::debug!("Playback stopped");
+            }
+            AudioCmd::SetVolume(v) => {
+                player.set_volume(v);
+                log::debug!("Volume set to {}", v);
             }
             AudioCmd::Shutdown => {
                 player.stop();

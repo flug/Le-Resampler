@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Sample Manager",
+  "productName": "Le Resampler",
   "version": "0.1.0",
-  "identifier": "com.sampli.sample-manager",
+  "identifier": "com.sampli.leresampler",
   "build": {
     "frontendDist": "../src"
   },
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Sample Manager",
+        "title": "Le Resampler",
         "width": 1200,
         "height": 800,
         "minWidth": 800,

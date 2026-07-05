@@ -1,0 +1,213 @@
+name: Release
+
+on:
+  schedule:
+    - cron: '0 8 * * 1' # Tous les lundis à 8h UTC
+  workflow_dispatch:     # Déclenchement manuel possible
+
+permissions:
+  contents: write
+
+jobs:
+  # ── 1. Vérifie s'il y a des commits depuis le dernier tag ────────────────
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Vérifier les commits depuis le dernier tag
+        id: check
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            echo "Aucun tag précédent — première release"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            COUNT=$(git log "$LAST_TAG..HEAD" --oneline | wc -l | tr -d ' ')
+            echo "$COUNT commit(s) depuis $LAST_TAG"
+            [ "$COUNT" -gt 0 ] && echo "should_release=true" >> $GITHUB_OUTPUT || echo "should_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Incrémenter la version (patch)
+        id: bump
+        if: steps.check.outputs.should_release == 'true'
+        run: |
+          CURRENT=$(jq -r '.version' src-tauri/tauri.conf.json)
+          MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT" | cut -d. -f2)
+          PATCH=$(echo "$CURRENT" | cut -d. -f3)
+          NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $CURRENT → $NEW_VERSION"
+
+      - name: Mettre à jour tauri.conf.json et Cargo.toml
+        if: steps.check.outputs.should_release == 'true'
+        run: |
+          VERSION=${{ steps.bump.outputs.version }}
+          # tauri.conf.json
+          jq ".version = \"$VERSION\"" src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
+          # Cargo.toml (première ligne version = "x.y.z")
+          sed -i "0,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+
+      - name: Commiter et tagger la nouvelle version
+        if: steps.check.outputs.should_release == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          git commit -m "chore: release ${{ steps.bump.outputs.tag }}"
+          git tag ${{ steps.bump.outputs.tag }}
+          git push origin main --tags
+
+  # ── 2. Build multi-plateforme ─────────────────────────────────────────────
+  build:
+    needs: check
+    if: needs.check.outputs.should_release == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            args: ''
+            label: Linux x86_64
+          - platform: windows-latest
+            args: ''
+            label: Windows x86_64
+          - platform: macos-latest
+            args: '--target universal-apple-darwin'
+            label: macOS Universal
+
+    runs-on: ${{ matrix.platform }}
+    name: Build — ${{ matrix.label }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check.outputs.tag }}
+
+      - name: Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Dépendances Linux
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev libasound2-dev pkg-config
+
+      - name: Build & publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: src-tauri
+          tagName: ${{ needs.check.outputs.tag }}
+          releaseName: Sampli ${{ needs.check.outputs.tag }}
+          releaseBody: |
+            ## Sampli ${{ needs.check.outputs.tag }}
+
+            Release automatique hebdomadaire.
+            Voir l'[historique des commits](https://github.com/${{ github.repository }}/commits/main) pour le détail des changements.
+
+            ## Téléchargements
+
+            | Plateforme | Fichier |
+            |------------|---------|
+            | macOS (Universal — Apple Silicon + Intel) | `Sample Manager_*_universal.dmg` |
+            | Windows | `Sample Manager_*_x64-setup.exe` |
+            | Linux | `sample-manager_*_amd64.AppImage` |
+
+            ## Installation macOS via Homebrew
+
+            ```bash
+            brew tap flugv1/sampli
+            brew install --cask sampli
+            ```
+
+            [![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/flugv1t)
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  # ── 3. Mettre à jour le tap Homebrew ─────────────────────────────────────
+  homebrew:
+    needs: [check, build]
+    if: needs.check.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    name: Update Homebrew tap
+    steps:
+      - name: Récupérer le DMG et calculer le SHA256
+        id: sha
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.check.outputs.tag }}
+          VERSION: ${{ needs.check.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Attendre que les assets soient disponibles
+          sleep 60
+          # Trouver l'URL du DMG universal via l'API GitHub
+          DMG_URL=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/tags/$TAG" \
+            | jq -r '.assets[] | select(.name | test("universal\\.dmg$")) | .browser_download_url')
+          if [ -z "$DMG_URL" ] || [ "$DMG_URL" = "null" ]; then
+            echo "DMG introuvable, skip Homebrew update"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          curl -L -o sampli.dmg "$DMG_URL"
+          SHA256=$(shasum -a 256 sampli.dmg | awk '{print $1}')
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          echo "dmg_url=$DMG_URL" >> $GITHUB_OUTPUT
+          echo "skip=false" >> $GITHUB_OUTPUT
+
+      - name: Mettre à jour le cask dans le tap
+        if: steps.sha.outputs.skip == 'false'
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          VERSION: ${{ needs.check.outputs.version }}
+          SHA256: ${{ steps.sha.outputs.sha256 }}
+          REPO: ${{ github.repository }}
+        run: |
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/flugv1/homebrew-sampli.git" tap
+          mkdir -p tap/Casks
+          cat > tap/Casks/sampli.rb << EOF
+          cask "sampli" do
+            version "${VERSION}"
+            sha256 "${SHA256}"
+
+            url "https://github.com/${REPO}/releases/download/v#{version}/Sample%20Manager_#{version}_universal.dmg"
+            name "Sampli"
+            desc "Desktop sample manager for audio producers and Akai MPC users"
+            homepage "https://github.com/${REPO}"
+
+            app "Sample Manager.app"
+
+            zap trash: [
+              "~/Library/Application Support/com.sampli.sample-manager",
+              "~/Library/Preferences/com.sampli.sample-manager.plist",
+            ]
+          end
+          EOF
+
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/sampli.rb
+          git diff --cached --quiet || git commit -m "chore: update sampli to ${VERSION}"
+          git push

@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for Sample Manager",
-  "windows": ["main"],
+  "description": "Default capabilities for Le Resampler",
+  "windows": ["main", "about"],
   "permissions": [
     "core:default",
     "core:event:allow-listen",
-    "core:event:allow-unlisten"
+    "core:event:allow-unlisten",
+    "opener:allow-open-url"
   ]
 }

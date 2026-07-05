@@ -3,6 +3,7 @@ use crate::db::{DbPool, SampleRecord};
 use crate::scanner;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
+use tauri_plugin_opener::OpenerExt;
 
 #[tauri::command]
 pub async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
@@ -26,9 +27,15 @@ pub async fn scan_folder(
     db: State<'_, Arc<DbPool>>,
 ) -> Result<usize, String> {
     let db = Arc::clone(&*db);
+    db.add_folder(&path).map_err(|e| e.to_string())?;
     tokio::task::spawn_blocking(move || scanner::scan_folder_sync(&path, &app, &db))
         .await
         .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn get_watched_folders(db: State<'_, Arc<DbPool>>) -> Result<Vec<String>, String> {
+    db.get_folders().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -93,6 +100,21 @@ pub async fn preview_sample(
 #[tauri::command]
 pub async fn stop_preview(player: State<'_, Arc<AudioPlayer>>) -> Result<(), String> {
     player.stop()
+}
+
+#[tauri::command]
+pub async fn set_volume(
+    volume: f32,
+    player: State<'_, Arc<AudioPlayer>>,
+) -> Result<(), String> {
+    player.set_volume(volume)
+}
+
+#[tauri::command]
+pub async fn open_url(url: String, app: AppHandle) -> Result<(), String> {
+    app.opener()
+        .open_url(&url, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
