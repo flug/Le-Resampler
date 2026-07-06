@@ -141,19 +141,3 @@ pub async fn set_setting(
 ) -> Result<(), String> {
     db.set_setting(&key, &value).map_err(|e| e.to_string())
 }
-
-#[tauri::command]
-pub async fn open_settings_window(app: AppHandle) -> Result<(), String> {
-    tauri::WebviewWindowBuilder::new(
-        &app,
-        "settings",
-        tauri::WebviewUrl::App("settings.html".into()),
-    )
-    .title("Settings")
-    .inner_size(460.0, 460.0)
-    .resizable(false)
-    .center()
-    .build()
-    .map(|_| ())
-    .map_err(|e| e.to_string())
-}

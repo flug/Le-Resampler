@@ -62,18 +62,6 @@ body {
 #btn-refresh:hover:not(:disabled) { color: var(--text); background: #3a3a3a; }
 #btn-refresh:disabled { opacity: 0.4; cursor: not-allowed; }
 
-#btn-settings {
-  background: var(--bg3);
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  padding: 6px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-}
-#btn-settings:hover { color: var(--text); background: #3a3a3a; }
-
 #autoplay-wrap {
   display: flex;
   align-items: center;

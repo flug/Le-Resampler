@@ -21,7 +21,6 @@ const btnStop = document.getElementById('btn-stop');
 const volumeSlider = document.getElementById('volume-slider');
 const btnAddFolder = document.getElementById('btn-add-folder');
 const btnRefresh = document.getElementById('btn-refresh');
-const btnSettings = document.getElementById('btn-settings');
 const exportFab = document.getElementById('export-fab');
 const exportFabLabel = document.getElementById('export-fab-label');
 const selectAll = document.getElementById('select-all');
@@ -333,15 +332,6 @@ btnRefresh.addEventListener('click', async () => {
     scanning = false;
     btnAddFolder.disabled = false;
     btnRefresh.disabled = false;
-  }
-});
-
-// --- Settings button ---
-btnSettings.addEventListener('click', async () => {
-  try {
-    await invoke('open_settings_window');
-  } catch (e) {
-    showError('Could not open settings: ' + e);
   }
 });
 

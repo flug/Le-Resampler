@@ -36,9 +36,12 @@ pub fn run() {
             app.manage(Arc::new(player));
 
             // Menu natif
+            let settings_item =
+                MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
+            let separator1 = PredefinedMenuItem::separator(app)?;
             let about_item =
                 MenuItem::with_id(app, "about", "About Le Resampler", true, None::<&str>)?;
-            let separator = PredefinedMenuItem::separator(app)?;
+            let separator2 = PredefinedMenuItem::separator(app)?;
             let buymecoffee = MenuItem::with_id(
                 app,
                 "buymecoffee",
@@ -47,13 +50,36 @@ pub fn run() {
                 None::<&str>,
             )?;
 
-            let help_menu =
-                Submenu::with_items(app, "Help", true, &[&about_item, &separator, &buymecoffee])?;
+            let help_menu = Submenu::with_items(
+                app,
+                "Help",
+                true,
+                &[
+                    &settings_item,
+                    &separator1,
+                    &about_item,
+                    &separator2,
+                    &buymecoffee,
+                ],
+            )?;
 
             let menu = Menu::with_items(app, &[&help_menu])?;
             app.set_menu(menu)?;
 
             app.on_menu_event(|app, event| match event.id().as_ref() {
+                "settings" => {
+                    tauri::WebviewWindowBuilder::new(
+                        app,
+                        "settings",
+                        tauri::WebviewUrl::App("settings.html".into()),
+                    )
+                    .title("Settings")
+                    .inner_size(460.0, 460.0)
+                    .resizable(false)
+                    .center()
+                    .build()
+                    .ok();
+                }
                 "about" => {
                     tauri::WebviewWindowBuilder::new(
                         app,
@@ -92,7 +118,6 @@ pub fn run() {
             commands::copy_samples_to,
             commands::get_setting,
             commands::set_setting,
-            commands::open_settings_window,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running Le Resampler");
