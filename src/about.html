@@ -35,7 +35,7 @@
 </head>
 <body>
   <h1>Le Resampler</h1>
-  <span class="version">Version 0.1.0</span>
+  <span class="version" id="version-label">Version …</span>
   <p>
     Audio sample manager for music producers. Scan your library,
     tag your files, preview them and export them to your SD card
@@ -51,6 +51,9 @@
     document.getElementById('bmc-btn').addEventListener('click', () => {
       invoke('open_url', { url: 'https://buymeacoffee.com/flugv1t' });
     });
+    invoke('get_app_version').then(v => {
+      document.getElementById('version-label').textContent = 'Version ' + v;
+    }).catch(() => {});
   </script>
 </body>
 </html>

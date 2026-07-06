@@ -104,6 +104,7 @@ pub fn run() {
             commands::stop_preview,
             commands::set_volume,
             commands::pick_folder,
+            commands::get_app_version,
             commands::open_url,
             commands::copy_samples_to,
             commands::get_setting,

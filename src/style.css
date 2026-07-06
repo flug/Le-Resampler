@@ -463,6 +463,22 @@ td.tags-cell {
 #btn-stop:hover:not(:disabled) { background: #3a3a3a; }
 #btn-stop:disabled { opacity: 0.4; cursor: default; }
 
+#update-notice {
+  background: none;
+  border: 1px solid #7c5cbf;
+  color: #9a7dd4;
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-weight: 500;
+}
+#update-notice:hover {
+  background: rgba(124, 92, 191, 0.15);
+  color: var(--accent-hover);
+}
+
 #volume-wrap {
   display: flex;
   align-items: center;

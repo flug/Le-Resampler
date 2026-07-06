@@ -108,6 +108,11 @@ pub async fn set_volume(volume: f32, player: State<'_, Arc<AudioPlayer>>) -> Res
 }
 
 #[tauri::command]
+pub fn get_app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+#[tauri::command]
 pub async fn open_url(url: String, app: AppHandle) -> Result<(), String> {
     app.opener()
         .open_url(&url, None::<&str>)

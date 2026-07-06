@@ -542,6 +542,39 @@ function showToast(msg) {
   toast._t = setTimeout(() => { toast.hidden = true; }, 4000);
 }
 
+// --- Update check ---
+const updateNotice = document.getElementById('update-notice');
+
+function parseSemver(v) {
+  return v.replace(/^v/, '').split('.').map(Number);
+}
+
+function isNewer(latest, current) {
+  const [lMaj, lMin, lPatch] = parseSemver(latest);
+  const [cMaj, cMin, cPatch] = parseSemver(current);
+  if (lMaj !== cMaj) return lMaj > cMaj;
+  if (lMin !== cMin) return lMin > cMin;
+  return lPatch > cPatch;
+}
+
+async function checkForUpdate() {
+  try {
+    const currentVersion = await invoke('get_app_version');
+    const res = await fetch(
+      'https://api.github.com/repos/flugv1/Le-Resampler/releases/latest',
+      { headers: { Accept: 'application/vnd.github.v3+json' } }
+    );
+    if (!res.ok) return;
+    const { tag_name, html_url } = await res.json();
+    if (isNewer(tag_name, currentVersion)) {
+      updateNotice.textContent = `↑ v${tag_name.replace(/^v/, '')} available`;
+      updateNotice.hidden = false;
+      updateNotice.onclick = () => invoke('open_url', { url: html_url });
+    }
+  } catch (_) {}
+}
+
 // --- Init ---
 loadSamples();
 loadTags();
+checkForUpdate();
