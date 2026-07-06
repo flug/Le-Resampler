@@ -62,7 +62,10 @@
         <div class="sp-section">
           <div class="sp-section-title">Export Path Template</div>
           <p class="sp-desc">Define how files are organised inside the export destination folder.</p>
-          <input type="text" id="sp-template" placeholder="%category%/%filename%">
+          <div class="sp-template-wrap">
+            <input type="text" id="sp-template" placeholder="%category%/%filename%">
+            <button id="sp-clear" type="button" title="Clear" hidden>×</button>
+          </div>
           <div class="sp-preview">Example: <span id="sp-preview-text">kick/thekick_001.wav</span></div>
 
           <table class="sp-vars">

@@ -325,17 +325,40 @@ td.tags-cell {
   color: var(--text-muted);
 }
 
+.sp-template-wrap {
+  position: relative;
+}
+
 #sp-template {
   width: 100%;
   background: var(--bg3);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 7px 10px;
+  padding: 7px 32px 7px 10px;
   border-radius: 4px;
   font-size: 13px;
   font-family: 'SF Mono', 'Menlo', monospace;
 }
 #sp-template:focus { outline: 1px solid var(--accent); }
+#sp-template.sp-invalid {
+  border-color: #c0392b;
+  outline: 1px solid #c0392b;
+}
+
+#sp-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+  line-height: 1;
+}
+#sp-clear:hover { color: var(--text); }
 
 .sp-preview {
   font-size: 11px;
@@ -372,6 +395,12 @@ td.tags-cell {
   color: var(--accent);
   white-space: nowrap;
   width: 130px;
+  cursor: pointer;
+  user-select: none;
+}
+.sp-vars td:first-child:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
 }
 .sp-vars td:nth-child(2) { color: var(--text-muted); }
 .sp-vars td:last-child { color: var(--text-muted); font-size: 11px; }

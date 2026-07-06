@@ -42,6 +42,7 @@ function showError(msg) {
 // --- Settings panel ---
 const settingsPanel = document.getElementById('settings-panel');
 const spTemplate = document.getElementById('sp-template');
+const spClear = document.getElementById('sp-clear');
 const spPreviewText = document.getElementById('sp-preview-text');
 const spSave = document.getElementById('sp-save');
 const spBack = document.getElementById('sp-back');
@@ -64,6 +65,11 @@ function buildPreview(tpl) {
   return s || '…';
 }
 
+function spSetStatus(msg, isError = false) {
+  spStatus.textContent = msg;
+  spStatus.style.color = isError ? '#ffd0d0' : '#a0e8bc';
+}
+
 async function showSettings() {
   sampleTable.style.display = 'none';
   emptyState.hidden = true;
@@ -74,6 +80,8 @@ async function showSettings() {
   } catch (_) {
     spTemplate.value = DEFAULT_TEMPLATE;
   }
+  spTemplate.classList.remove('sp-invalid');
+  spClear.hidden = spTemplate.value === '';
   spPreviewText.textContent = buildPreview(spTemplate.value);
   spStatus.textContent = '';
 }
@@ -83,20 +91,46 @@ function hideSettings() {
   renderSamples();
 }
 
+function insertVariable(variable) {
+  const start = spTemplate.selectionStart;
+  const end = spTemplate.selectionEnd;
+  spTemplate.value = spTemplate.value.slice(0, start) + variable + spTemplate.value.slice(end);
+  spTemplate.selectionStart = spTemplate.selectionEnd = start + variable.length;
+  spTemplate.focus();
+  spTemplate.dispatchEvent(new Event('input'));
+}
+
 spTemplate.addEventListener('input', () => {
   spPreviewText.textContent = buildPreview(spTemplate.value);
+  spClear.hidden = spTemplate.value === '';
+  spTemplate.classList.remove('sp-invalid');
+  spStatus.textContent = '';
+});
+
+spClear.addEventListener('click', () => {
+  spTemplate.value = '';
+  spTemplate.dispatchEvent(new Event('input'));
+  spTemplate.focus();
+});
+
+document.querySelectorAll('.sp-vars tbody td:first-child').forEach(td => {
+  td.addEventListener('click', () => insertVariable(td.textContent.trim()));
 });
 
 spSave.addEventListener('click', async () => {
-  const value = spTemplate.value.trim() || DEFAULT_TEMPLATE;
-  spTemplate.value = value;
+  const value = spTemplate.value.trim();
+  if (!value) {
+    spTemplate.classList.add('sp-invalid');
+    spSetStatus('Template cannot be empty.', true);
+    return;
+  }
   spSave.disabled = true;
   try {
     await invoke('set_setting', { key: SETTING_KEY, value });
-    spStatus.textContent = 'Saved.';
+    spSetStatus('Saved.');
     setTimeout(() => { spStatus.textContent = ''; }, 2000);
   } catch (e) {
-    spStatus.textContent = 'Error: ' + e;
+    spSetStatus('Error: ' + e, true);
   } finally {
     spSave.disabled = false;
   }
