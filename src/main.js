@@ -39,6 +39,73 @@ function showError(msg) {
   setTimeout(() => { toast.hidden = true; }, 5000);
 }
 
+// --- Settings panel ---
+const settingsPanel = document.getElementById('settings-panel');
+const spTemplate = document.getElementById('sp-template');
+const spPreviewText = document.getElementById('sp-preview-text');
+const spSave = document.getElementById('sp-save');
+const spBack = document.getElementById('sp-back');
+const spStatus = document.getElementById('sp-status');
+
+const SETTING_KEY = 'export_template';
+const DEFAULT_TEMPLATE = '%category%/%filename%';
+const SP_EXAMPLE = {
+  '%filename%': 'thekick_001.wav',
+  '%category%': 'kick',
+  '%key%': 'Am',
+  '%bpm%': '120',
+  '%tags%': 'groovy',
+  '%type%': 'one_shot',
+};
+
+function buildPreview(tpl) {
+  let s = tpl;
+  for (const [v, ex] of Object.entries(SP_EXAMPLE)) s = s.replaceAll(v, ex);
+  return s || '…';
+}
+
+async function showSettings() {
+  sampleTable.style.display = 'none';
+  emptyState.hidden = true;
+  settingsPanel.hidden = false;
+  try {
+    const saved = await invoke('get_setting', { key: SETTING_KEY });
+    spTemplate.value = saved ?? DEFAULT_TEMPLATE;
+  } catch (_) {
+    spTemplate.value = DEFAULT_TEMPLATE;
+  }
+  spPreviewText.textContent = buildPreview(spTemplate.value);
+  spStatus.textContent = '';
+}
+
+function hideSettings() {
+  settingsPanel.hidden = true;
+  renderSamples();
+}
+
+spTemplate.addEventListener('input', () => {
+  spPreviewText.textContent = buildPreview(spTemplate.value);
+});
+
+spSave.addEventListener('click', async () => {
+  const value = spTemplate.value.trim() || DEFAULT_TEMPLATE;
+  spTemplate.value = value;
+  spSave.disabled = true;
+  try {
+    await invoke('set_setting', { key: SETTING_KEY, value });
+    spStatus.textContent = 'Saved.';
+    setTimeout(() => { spStatus.textContent = ''; }, 2000);
+  } catch (e) {
+    spStatus.textContent = 'Error: ' + e;
+  } finally {
+    spSave.disabled = false;
+  }
+});
+
+spBack.addEventListener('click', hideSettings);
+
+await listen('show-settings', () => showSettings());
+
 // --- Scan progress events ---
 await listen('scan-progress', (event) => {
   const { current, total } = event.payload;
@@ -92,6 +159,7 @@ async function loadSamples() {
 }
 
 function renderSamples() {
+  if (!settingsPanel.hidden) return;
   sampleList.innerHTML = '';
   const visible = samples.length > 0;
   emptyState.hidden = visible;

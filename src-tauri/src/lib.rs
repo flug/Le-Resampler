@@ -8,7 +8,7 @@ mod scanner;
 
 use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 pub fn run() {
     env_logger::init();
@@ -68,17 +68,7 @@ pub fn run() {
 
             app.on_menu_event(|app, event| match event.id().as_ref() {
                 "settings" => {
-                    tauri::WebviewWindowBuilder::new(
-                        app,
-                        "settings",
-                        tauri::WebviewUrl::App("settings.html".into()),
-                    )
-                    .title("Settings")
-                    .inner_size(460.0, 460.0)
-                    .resizable(false)
-                    .center()
-                    .build()
-                    .ok();
+                    app.emit("show-settings", ()).ok();
                 }
                 "about" => {
                     tauri::WebviewWindowBuilder::new(

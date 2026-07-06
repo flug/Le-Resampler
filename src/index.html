@@ -51,6 +51,41 @@
       <tbody id="sample-list"></tbody>
     </table>
     <div id="empty-state">No samples yet — click "Add Folder" to scan your library.</div>
+
+    <div id="settings-panel" hidden>
+      <div id="settings-inner">
+        <div class="sp-header">
+          <h2>Settings</h2>
+          <button id="sp-back">← Back to library</button>
+        </div>
+
+        <div class="sp-section">
+          <div class="sp-section-title">Export Path Template</div>
+          <p class="sp-desc">Define how files are organised inside the export destination folder.</p>
+          <input type="text" id="sp-template" placeholder="%category%/%filename%">
+          <div class="sp-preview">Example: <span id="sp-preview-text">kick/thekick_001.wav</span></div>
+
+          <table class="sp-vars">
+            <thead>
+              <tr><th>Variable</th><th>Description</th><th>Example</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>%filename%</td><td>Original filename</td><td>kick_001.wav</td></tr>
+              <tr><td>%category%</td><td>Category (falls back to first tag, then "misc")</td><td>kick</td></tr>
+              <tr><td>%key%</td><td>Musical key (or "unknown")</td><td>Am</td></tr>
+              <tr><td>%bpm%</td><td>BPM rounded (or "unknown")</td><td>120</td></tr>
+              <tr><td>%tags%</td><td>First tag of the sample (or "misc")</td><td>groovy</td></tr>
+              <tr><td>%type%</td><td>Sample type (or "misc")</td><td>one_shot</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="sp-footer">
+          <span id="sp-status"></span>
+          <button id="sp-save">Save</button>
+        </div>
+      </div>
+    </div>
   </main>
 
   <footer id="player-bar">

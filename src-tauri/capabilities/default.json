@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capabilities for Le Resampler",
-  "windows": ["main", "about", "settings"],
+  "windows": ["main", "about"],
   "permissions": [
     "core:default",
     "core:event:allow-listen",
