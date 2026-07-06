@@ -56,6 +56,10 @@ impl DbPool {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 path TEXT NOT NULL UNIQUE
             );
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             ",
         )?;
         Ok(())
@@ -225,6 +229,26 @@ impl DbPool {
         let mut stmt = conn.prepare("SELECT path FROM folders ORDER BY path")?;
         let rows = stmt.query_map([], |r| r.get(0))?;
         rows.collect()
+    }
+
+    pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
+        match stmt.query_row(params![key], |r| r.get(0)) {
+            Ok(val) => Ok(Some(val)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
     }
 
     #[cfg(test)]
@@ -457,6 +481,36 @@ mod tests {
     fn get_folders_empty() {
         let db = make_db();
         assert_eq!(db.get_folders().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn settings_set_and_get() {
+        let db = make_db();
+        db.set_setting("export_template", "%category%/%filename%")
+            .unwrap();
+        assert_eq!(
+            db.get_setting("export_template").unwrap(),
+            Some("%category%/%filename%".to_string())
+        );
+    }
+
+    #[test]
+    fn settings_overwrite() {
+        let db = make_db();
+        db.set_setting("export_template", "%category%/%filename%")
+            .unwrap();
+        db.set_setting("export_template", "%key%/%filename%")
+            .unwrap();
+        assert_eq!(
+            db.get_setting("export_template").unwrap(),
+            Some("%key%/%filename%".to_string())
+        );
+    }
+
+    #[test]
+    fn settings_get_missing_key_returns_none() {
+        let db = make_db();
+        assert_eq!(db.get_setting("nonexistent").unwrap(), None);
     }
 
     #[test]

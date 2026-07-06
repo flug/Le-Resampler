@@ -21,6 +21,7 @@ const btnStop = document.getElementById('btn-stop');
 const volumeSlider = document.getElementById('volume-slider');
 const btnAddFolder = document.getElementById('btn-add-folder');
 const btnRefresh = document.getElementById('btn-refresh');
+const btnSettings = document.getElementById('btn-settings');
 const exportFab = document.getElementById('export-fab');
 const exportFabLabel = document.getElementById('export-fab-label');
 const selectAll = document.getElementById('select-all');
@@ -335,6 +336,15 @@ btnRefresh.addEventListener('click', async () => {
   }
 });
 
+// --- Settings button ---
+btnSettings.addEventListener('click', async () => {
+  try {
+    await invoke('open_settings_window');
+  } catch (e) {
+    showError('Could not open settings: ' + e);
+  }
+});
+
 // --- Auto-play toggle ---
 autoplayCb.addEventListener('change', () => { autoPlay = autoplayCb.checked; });
 
@@ -393,13 +403,24 @@ async function exportSamples() {
   const dest = await invoke('pick_folder');
   if (!dest) return;
 
+  const template = await invoke('get_setting', { key: 'export_template' })
+    .catch(() => null) ?? '%category%/%filename%';
+
   const entries = samples
     .filter(s => selectedIds.has(s.id))
-    .map(s => ({ path: s.path, category: s.category, tags: s.tags }));
+    .map(s => ({
+      path: s.path,
+      filename: s.filename,
+      category: s.category,
+      tags: s.tags,
+      bpm: s.bpm ?? null,
+      musical_key: s.musical_key ?? null,
+      sample_type: s.sample_type ?? null,
+    }));
 
   exportFab.disabled = true;
   try {
-    const r = await invoke('copy_samples_to', { dest, samples: entries });
+    const r = await invoke('copy_samples_to', { dest, samples: entries, template });
     const msg = `✓ ${r.copied} sample(s) copied${r.skipped ? `, ${r.skipped} skipped` : ''}`;
     showToast(msg);
     if (r.errors.length > 0) {

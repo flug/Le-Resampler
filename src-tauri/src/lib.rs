@@ -90,6 +90,9 @@ pub fn run() {
             commands::pick_folder,
             commands::open_url,
             commands::copy_samples_to,
+            commands::get_setting,
+            commands::set_setting,
+            commands::open_settings_window,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running Le Resampler");

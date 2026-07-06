@@ -118,8 +118,42 @@ pub async fn open_url(url: String, app: AppHandle) -> Result<(), String> {
 pub async fn copy_samples_to(
     dest: String,
     samples: Vec<crate::export::ExportEntry>,
+    template: String,
 ) -> Result<crate::export::ExportResult, String> {
-    tokio::task::spawn_blocking(move || crate::export::copy_samples(&dest, &samples))
+    tokio::task::spawn_blocking(move || crate::export::copy_samples(&dest, &samples, &template))
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_setting(
+    key: String,
+    db: State<'_, Arc<DbPool>>,
+) -> Result<Option<String>, String> {
+    db.get_setting(&key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_setting(
+    key: String,
+    value: String,
+    db: State<'_, Arc<DbPool>>,
+) -> Result<(), String> {
+    db.set_setting(&key, &value).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn open_settings_window(app: AppHandle) -> Result<(), String> {
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        "settings",
+        tauri::WebviewUrl::App("settings.html".into()),
+    )
+    .title("Settings")
+    .inner_size(460.0, 460.0)
+    .resizable(false)
+    .center()
+    .build()
+    .map(|_| ())
+    .map_err(|e| e.to_string())
 }
