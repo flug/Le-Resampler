@@ -1,6 +1,6 @@
 cask "le-resampler" do
-  version "0.1.2"
-  sha256 "b3f0ae44f364446860132a37855a2008d1600156f96b23db720dd18a36ea198f"
+  version "0.1.3"
+  sha256 "fcba57da38804268213f22700d1c80f773866f355b96852b3e8044b0163082ce"
 
   url "https://github.com/flug/Le-Resampler/releases/download/v#{version}/Le%20Resampler_#{version}_universal.dmg"
   name "Le Resampler"
