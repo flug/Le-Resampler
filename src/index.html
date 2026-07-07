@@ -83,6 +83,21 @@
           </table>
         </div>
 
+        <div class="sp-section">
+          <div class="sp-section-title">Metadata</div>
+          <label class="sp-checkbox">
+            <input type="checkbox" id="sp-detect-pitch">
+            Auto-detect key for one-shots (YIN pitch detection)
+          </label>
+          <p class="sp-desc">When no key is found in the filename or metadata, analyse the audio to infer the root note. Applies to one-shots only. Adds a few milliseconds per file during scan.</p>
+
+          <label class="sp-checkbox">
+            <input type="checkbox" id="sp-write-key">
+            Write detected key back to file metadata
+          </label>
+          <p class="sp-desc sp-warn">⚠ This modifies your original files. Only the key (TKEY / RIFF INFO) tag is written. Applies when a key is found from the filename or audio detection.</p>
+        </div>
+
         <div class="sp-footer">
           <span id="sp-status"></span>
           <button id="sp-save">Save</button>

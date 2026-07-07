@@ -47,6 +47,8 @@ const spPreviewText = document.getElementById('sp-preview-text');
 const spSave = document.getElementById('sp-save');
 const spBack = document.getElementById('sp-back');
 const spStatus = document.getElementById('sp-status');
+const spDetectPitch = document.getElementById('sp-detect-pitch');
+const spWriteKey = document.getElementById('sp-write-key');
 
 const SETTING_KEY = 'export_template';
 const DEFAULT_TEMPLATE = '%category%/%filename%';
@@ -84,6 +86,16 @@ async function showSettings() {
   spClear.hidden = spTemplate.value === '';
   spPreviewText.textContent = buildPreview(spTemplate.value);
   spStatus.textContent = '';
+
+  try {
+    const detectPitch = await invoke('get_setting', { key: 'detect_pitch' });
+    spDetectPitch.checked = detectPitch === 'true';
+  } catch (_) { spDetectPitch.checked = false; }
+
+  try {
+    const writeKey = await invoke('get_setting', { key: 'write_key_to_metadata' });
+    spWriteKey.checked = writeKey === 'true';
+  } catch (_) { spWriteKey.checked = false; }
 }
 
 function hideSettings() {
@@ -127,6 +139,8 @@ spSave.addEventListener('click', async () => {
   spSave.disabled = true;
   try {
     await invoke('set_setting', { key: SETTING_KEY, value });
+    await invoke('set_setting', { key: 'detect_pitch', value: String(spDetectPitch.checked) });
+    await invoke('set_setting', { key: 'write_key_to_metadata', value: String(spWriteKey.checked) });
     spSetStatus('Saved.');
     setTimeout(() => { spStatus.textContent = ''; }, 2000);
   } catch (e) {

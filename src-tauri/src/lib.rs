@@ -4,6 +4,7 @@ mod commands;
 mod db;
 mod export;
 mod metadata;
+mod pitch;
 mod scanner;
 
 use std::sync::Arc;

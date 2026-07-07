@@ -1,9 +1,16 @@
 use crate::db::{DbPool, SampleRecord};
-use crate::metadata;
+use crate::metadata::{self, KeySource};
+use crate::pitch;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use walkdir::WalkDir;
+
+#[derive(Clone, Copy)]
+pub struct ScanOptions {
+    pub detect_pitch: bool,
+    pub write_key_to_metadata: bool,
+}
 
 const AUDIO_EXTENSIONS: &[&str] = &["wav", "aif", "aiff", "flac", "mp3", "ogg", "opus"];
 
@@ -23,6 +30,21 @@ pub struct ScanComplete {
 #[cfg_attr(tarpaulin, coverage(off))]
 pub fn scan_folder_sync(path: &str, app: &AppHandle, db: &Arc<DbPool>) -> Result<usize, String> {
     log::info!("Starting scan of: {}", path);
+
+    let detect_pitch = db
+        .get_setting("detect_pitch")
+        .unwrap_or(None)
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let write_key_to_metadata = db
+        .get_setting("write_key_to_metadata")
+        .unwrap_or(None)
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let opts = ScanOptions {
+        detect_pitch,
+        write_key_to_metadata,
+    };
 
     let paths: Vec<PathBuf> = WalkDir::new(path)
         .follow_links(true)
@@ -45,7 +67,7 @@ pub fn scan_folder_sync(path: &str, app: &AppHandle, db: &Arc<DbPool>) -> Result
     );
 
     let now = chrono::Utc::now().to_rfc3339();
-    let (added, skipped) = scan_entries(&paths, db, &now, |cur, tot, fname| {
+    let (added, skipped) = scan_entries(&paths, db, &now, opts, |cur, tot, fname| {
         let _ = app.emit(
             "scan-progress",
             ScanProgress {
@@ -65,6 +87,7 @@ pub(crate) fn scan_entries(
     paths: &[PathBuf],
     db: &Arc<DbPool>,
     date_added: &str,
+    opts: ScanOptions,
     mut on_progress: impl FnMut(usize, usize, &str),
 ) -> (usize, usize) {
     let total = paths.len();
@@ -82,7 +105,7 @@ pub(crate) fn scan_entries(
             on_progress(i + 1, total, &filename);
         }
 
-        match process_file(file_path, db, date_added) {
+        match process_file(file_path, db, date_added, opts) {
             Ok(true) => added += 1,
             Ok(false) => skipped += 1,
             Err(e) => {
@@ -99,8 +122,30 @@ pub(crate) fn process_file(
     path: &Path,
     db: &Arc<DbPool>,
     date_added: &str,
+    opts: ScanOptions,
 ) -> Result<bool, String> {
-    let meta = metadata::extract(path)?;
+    let mut meta = metadata::extract(path)?;
+
+    // Audio pitch detection for keyless one-shots
+    if meta.musical_key.is_none()
+        && meta.sample_type.as_deref() == Some("one-shot")
+        && opts.detect_pitch
+    {
+        if let Some(key) = pitch::detect_key(path) {
+            meta.musical_key = Some(key);
+            meta.key_source = Some(KeySource::AudioPitch);
+        }
+    }
+
+    // Write detected/inferred key back to the file's embedded metadata
+    if opts.write_key_to_metadata {
+        if let Some(key) = &meta.musical_key {
+            if let Err(e) = metadata::write_key_to_file(path, key) {
+                log::warn!("Failed to write key to {:?}: {}", path, e);
+            }
+        }
+    }
+
     let path_str = path.to_string_lossy().to_string();
     let filename = path
         .file_name()
@@ -145,6 +190,13 @@ mod tests {
         Arc::new(db)
     }
 
+    fn no_opts() -> ScanOptions {
+        ScanOptions {
+            detect_pitch: false,
+            write_key_to_metadata: false,
+        }
+    }
+
     fn make_wav() -> Vec<u8> {
         let data_size = 2u32; // 1 sample, 16-bit
         let mut v = Vec::new();
@@ -161,6 +213,60 @@ mod tests {
         v.extend_from_slice(&16u16.to_le_bytes()); // 16 bits
         v.extend_from_slice(b"data");
         v.extend_from_slice(&data_size.to_le_bytes());
+        v.extend_from_slice(&[0u8; 2]);
+        v
+    }
+
+    fn make_sine_wav(freq: f32, sample_rate: u32, duration_ms: u32) -> Vec<u8> {
+        let num_samples = (sample_rate as f32 * duration_ms as f32 / 1000.0) as u32;
+        let data_size = num_samples * 2;
+        let mut pcm = Vec::new();
+        for i in 0..num_samples {
+            let t = i as f32 / sample_rate as f32;
+            let s = ((2.0 * std::f32::consts::PI * freq * t).sin() * 32767.0) as i16;
+            pcm.extend_from_slice(&s.to_le_bytes());
+        }
+        let mut v = Vec::new();
+        v.extend_from_slice(b"RIFF");
+        v.extend_from_slice(&(36 + data_size).to_le_bytes());
+        v.extend_from_slice(b"WAVE");
+        v.extend_from_slice(b"fmt ");
+        v.extend_from_slice(&16u32.to_le_bytes());
+        v.extend_from_slice(&1u16.to_le_bytes());
+        v.extend_from_slice(&1u16.to_le_bytes());
+        v.extend_from_slice(&sample_rate.to_le_bytes());
+        v.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+        v.extend_from_slice(&2u16.to_le_bytes());
+        v.extend_from_slice(&16u16.to_le_bytes());
+        v.extend_from_slice(b"data");
+        v.extend_from_slice(&data_size.to_le_bytes());
+        v.extend_from_slice(&pcm);
+        v
+    }
+
+    /// WAV with a minimal embedded ID3v2.3 tag so write_key_to_file can write to it.
+    fn make_tagged_wav() -> Vec<u8> {
+        let id3: &[u8] = &[b'I', b'D', b'3', 3, 0, 0, 0, 0, 0, 0];
+        let id3_size = id3.len() as u32; // 10
+        let pcm_size = 2u32;
+        let riff_size = 4 + (8 + id3_size) + 24 + (8 + pcm_size);
+        let mut v = Vec::new();
+        v.extend_from_slice(b"RIFF");
+        v.extend_from_slice(&riff_size.to_le_bytes());
+        v.extend_from_slice(b"WAVE");
+        v.extend_from_slice(b"id3 ");
+        v.extend_from_slice(&id3_size.to_le_bytes());
+        v.extend_from_slice(id3);
+        v.extend_from_slice(b"fmt ");
+        v.extend_from_slice(&16u32.to_le_bytes());
+        v.extend_from_slice(&1u16.to_le_bytes());
+        v.extend_from_slice(&1u16.to_le_bytes());
+        v.extend_from_slice(&44100u32.to_le_bytes());
+        v.extend_from_slice(&88200u32.to_le_bytes());
+        v.extend_from_slice(&2u16.to_le_bytes());
+        v.extend_from_slice(&16u16.to_le_bytes());
+        v.extend_from_slice(b"data");
+        v.extend_from_slice(&pcm_size.to_le_bytes());
         v.extend_from_slice(&[0u8; 2]);
         v
     }
@@ -226,7 +332,7 @@ mod tests {
         let path = dir.path().join("sample.wav");
         std::fs::write(&path, make_wav()).unwrap();
         let now = chrono::Utc::now().to_rfc3339();
-        assert!(process_file(&path, &db, &now).unwrap());
+        assert!(process_file(&path, &db, &now, no_opts()).unwrap());
     }
 
     #[test]
@@ -236,8 +342,8 @@ mod tests {
         let path = dir.path().join("sample.wav");
         std::fs::write(&path, make_wav()).unwrap();
         let now = chrono::Utc::now().to_rfc3339();
-        process_file(&path, &db, &now).unwrap();
-        assert!(!process_file(&path, &db, &now).unwrap());
+        process_file(&path, &db, &now, no_opts()).unwrap();
+        assert!(!process_file(&path, &db, &now, no_opts()).unwrap());
     }
 
     #[test]
@@ -245,8 +351,106 @@ mod tests {
         let db = make_db();
         let path = Path::new("/nonexistent/path/sample.wav");
         let now = chrono::Utc::now().to_rfc3339();
-        // lofty fails silently; path is still upserted with null metadata
-        assert!(process_file(path, &db, &now).is_ok());
+        assert!(process_file(path, &db, &now, no_opts()).is_ok());
+    }
+
+    #[test]
+    fn process_file_detect_pitch_silent_one_shot_no_key() {
+        // Silent 1-sample WAV is a one-shot; YIN needs >2048 samples so returns None
+        let db = make_db();
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("silent.wav");
+        std::fs::write(&path, make_wav()).unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let opts = ScanOptions {
+            detect_pitch: true,
+            write_key_to_metadata: false,
+        };
+        assert!(process_file(&path, &db, &now, opts).unwrap());
+        let samples = db.list_samples(None, None, None).unwrap();
+        assert!(samples[0].musical_key.is_none());
+    }
+
+    #[test]
+    fn process_file_detect_pitch_tonal_one_shot_detects_key() {
+        let db = make_db();
+        let dir = tempdir().unwrap();
+        // 500 ms of A4 (440 Hz) — one-shot duration, long enough for YIN
+        let path = dir.path().join("a440.wav");
+        std::fs::write(&path, make_sine_wav(440.0, 44100, 500)).unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let opts = ScanOptions {
+            detect_pitch: true,
+            write_key_to_metadata: false,
+        };
+        process_file(&path, &db, &now, opts).unwrap();
+        let samples = db.list_samples(None, None, None).unwrap();
+        assert_eq!(samples[0].musical_key.as_deref(), Some("A"));
+    }
+
+    #[test]
+    fn process_file_detect_pitch_skipped_when_key_already_known() {
+        // File has key in filename → detect_pitch should not overwrite it
+        let db = make_db();
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("pad_Cm_warm.wav");
+        std::fs::write(&path, make_sine_wav(440.0, 44100, 500)).unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let opts = ScanOptions {
+            detect_pitch: true,
+            write_key_to_metadata: false,
+        };
+        process_file(&path, &db, &now, opts).unwrap();
+        let samples = db.list_samples(None, None, None).unwrap();
+        // Key from filename wins; pitch detection branch is not entered
+        assert_eq!(samples[0].musical_key.as_deref(), Some("Cm"));
+    }
+
+    #[test]
+    fn process_file_write_key_to_metadata_no_key_skips() {
+        // No key in filename or audio → write-back if let doesn't match
+        let db = make_db();
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("kick_128bpm.wav");
+        std::fs::write(&path, make_wav()).unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let opts = ScanOptions {
+            detect_pitch: false,
+            write_key_to_metadata: true,
+        };
+        assert!(process_file(&path, &db, &now, opts).is_ok());
+    }
+
+    #[test]
+    fn process_file_write_key_to_metadata_success() {
+        // Filename provides key + tagged WAV → write-back succeeds
+        let db = make_db();
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("pad_Am_loop.wav");
+        std::fs::write(&path, make_tagged_wav()).unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let opts = ScanOptions {
+            detect_pitch: false,
+            write_key_to_metadata: true,
+        };
+        assert!(process_file(&path, &db, &now, opts).is_ok());
+    }
+
+    #[test]
+    fn process_file_write_key_to_metadata_failure_warns_and_continues() {
+        // Filename provides key but file has no writable tag → warn log, still returns Ok
+        let db = make_db();
+        let dir = tempdir().unwrap();
+        // Use .bin extension so lofty can't identify format → write_key_to_file returns Err
+        let path = dir.path().join("Am_pad.bin");
+        std::fs::write(&path, b"garbage content").unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let opts = ScanOptions {
+            detect_pitch: false,
+            write_key_to_metadata: true,
+        };
+        // Even if write fails, process_file should succeed (just logs a warning)
+        assert!(process_file(&path, &db, &now, opts).is_ok());
     }
 
     // --- scan_entries ---
@@ -263,7 +467,7 @@ mod tests {
             })
             .collect();
         let now = chrono::Utc::now().to_rfc3339();
-        let (added, skipped) = scan_entries(&paths, &db, &now, |_, _, _| {});
+        let (added, skipped) = scan_entries(&paths, &db, &now, no_opts(), |_, _, _| {});
         assert_eq!(added, 2);
         assert_eq!(skipped, 0);
     }
@@ -280,8 +484,8 @@ mod tests {
             })
             .collect();
         let now = chrono::Utc::now().to_rfc3339();
-        scan_entries(&paths, &db, &now, |_, _, _| {});
-        let (added, skipped) = scan_entries(&paths, &db, &now, |_, _, _| {});
+        scan_entries(&paths, &db, &now, no_opts(), |_, _, _| {});
+        let (added, skipped) = scan_entries(&paths, &db, &now, no_opts(), |_, _, _| {});
         assert_eq!(added, 0);
         assert_eq!(skipped, 2);
     }
@@ -290,7 +494,6 @@ mod tests {
     fn scan_entries_progress_callback_called_at_boundaries() {
         let db = make_db();
         let dir = tempdir().unwrap();
-        // 3 files: callback fires at i=0 and i=2 (first and last)
         let paths: Vec<PathBuf> = (0..3)
             .map(|i| {
                 let p = dir.path().join(format!("file{}.wav", i));
@@ -300,7 +503,7 @@ mod tests {
             .collect();
         let now = chrono::Utc::now().to_rfc3339();
         let mut calls: Vec<(usize, usize)> = Vec::new();
-        scan_entries(&paths, &db, &now, |cur, tot, _| {
+        scan_entries(&paths, &db, &now, no_opts(), |cur, tot, _| {
             calls.push((cur, tot));
         });
         assert_eq!(calls.len(), 2);

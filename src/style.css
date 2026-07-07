@@ -405,6 +405,24 @@ td.tags-cell {
 .sp-vars td:nth-child(2) { color: var(--text-muted); }
 .sp-vars td:last-child { color: var(--text-muted); font-size: 11px; }
 
+.sp-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.sp-checkbox input[type="checkbox"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+
+.sp-warn {
+  color: #e5a050;
+}
+
 .sp-footer {
   display: flex;
   align-items: center;
