@@ -47,7 +47,6 @@ const spPreviewText = document.getElementById('sp-preview-text');
 const spSave = document.getElementById('sp-save');
 const spBack = document.getElementById('sp-back');
 const spStatus = document.getElementById('sp-status');
-const spDetectPitch = document.getElementById('sp-detect-pitch');
 const spWriteKey = document.getElementById('sp-write-key');
 
 const SETTING_KEY = 'export_template';
@@ -88,9 +87,12 @@ async function showSettings() {
   spStatus.textContent = '';
 
   try {
-    const detectPitch = await invoke('get_setting', { key: 'detect_pitch' });
-    spDetectPitch.checked = detectPitch === 'true';
-  } catch (_) { spDetectPitch.checked = false; }
+    const kd = await invoke('get_setting', { key: 'key_detection' });
+    const val = kd ?? 'off';
+    const radio = document.querySelector(`input[name="key-detection"][value="${val}"]`);
+    if (radio) radio.checked = true;
+    else document.getElementById('sp-kd-off').checked = true;
+  } catch (_) { document.getElementById('sp-kd-off').checked = true; }
 
   try {
     const writeKey = await invoke('get_setting', { key: 'write_key_to_metadata' });
@@ -139,7 +141,8 @@ spSave.addEventListener('click', async () => {
   spSave.disabled = true;
   try {
     await invoke('set_setting', { key: SETTING_KEY, value });
-    await invoke('set_setting', { key: 'detect_pitch', value: String(spDetectPitch.checked) });
+    const kd = document.querySelector('input[name="key-detection"]:checked')?.value ?? 'off';
+    await invoke('set_setting', { key: 'key_detection', value: kd });
     await invoke('set_setting', { key: 'write_key_to_metadata', value: String(spWriteKey.checked) });
     spSetStatus('Saved.');
     setTimeout(() => { spStatus.textContent = ''; }, 2000);

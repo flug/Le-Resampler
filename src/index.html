@@ -84,18 +84,30 @@
         </div>
 
         <div class="sp-section">
-          <div class="sp-section-title">Metadata</div>
-          <label class="sp-checkbox">
-            <input type="checkbox" id="sp-detect-pitch">
-            Auto-detect key for one-shots (YIN pitch detection)
-          </label>
-          <p class="sp-desc">When no key is found in the filename or metadata, analyse the audio to infer the root note. Applies to one-shots only. Adds a few milliseconds per file during scan.</p>
+          <div class="sp-section-title">Key Detection</div>
+          <p class="sp-desc">When no key is found in the filename or embedded metadata, analyse the audio automatically.</p>
+          <div class="sp-radio-group">
+            <label class="sp-radio">
+              <input type="radio" name="key-detection" value="off" id="sp-kd-off">
+              <span>Off</span>
+            </label>
+            <label class="sp-radio">
+              <input type="radio" name="key-detection" value="yin" id="sp-kd-yin">
+              <span><strong>Fast</strong> — YIN pitch detection</span>
+              <span class="sp-radio-hint">Root note only ("A", "C#"). One-shots only. ~3 ms per file.</span>
+            </label>
+            <label class="sp-radio">
+              <input type="radio" name="key-detection" value="ks" id="sp-kd-ks">
+              <span><strong>Accurate</strong> — Krumhansl-Schmuckler</span>
+              <span class="sp-radio-hint">Full key with mode ("Am", "Cmaj"). Works on loops too. ~20 ms per file.</span>
+            </label>
+          </div>
 
-          <label class="sp-checkbox">
+          <label class="sp-checkbox" style="margin-top:4px">
             <input type="checkbox" id="sp-write-key">
             Write detected key back to file metadata
           </label>
-          <p class="sp-desc sp-warn">⚠ This modifies your original files. Only the key (TKEY / RIFF INFO) tag is written. Applies when a key is found from the filename or audio detection.</p>
+          <p class="sp-desc sp-warn">⚠ This modifies your original files. Only the TKEY / RIFF INFO tag is written.</p>
         </div>
 
         <div class="sp-footer">

@@ -6,9 +6,18 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use walkdir::WalkDir;
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum KeyDetection {
+    Off,
+    /// YIN pitch detection — fast, root note only, one-shots only.
+    Yin,
+    /// Krumhansl-Schmuckler — harmonic analysis, major/minor, any sample type.
+    Ks,
+}
+
 #[derive(Clone, Copy)]
 pub struct ScanOptions {
-    pub detect_pitch: bool,
+    pub key_detection: KeyDetection,
     pub write_key_to_metadata: bool,
 }
 
@@ -31,18 +40,22 @@ pub struct ScanComplete {
 pub fn scan_folder_sync(path: &str, app: &AppHandle, db: &Arc<DbPool>) -> Result<usize, String> {
     log::info!("Starting scan of: {}", path);
 
-    let detect_pitch = db
-        .get_setting("detect_pitch")
+    let key_detection = db
+        .get_setting("key_detection")
         .unwrap_or(None)
-        .map(|v| v == "true")
-        .unwrap_or(false);
+        .map(|v| match v.as_str() {
+            "yin" => KeyDetection::Yin,
+            "ks" => KeyDetection::Ks,
+            _ => KeyDetection::Off,
+        })
+        .unwrap_or(KeyDetection::Off);
     let write_key_to_metadata = db
         .get_setting("write_key_to_metadata")
         .unwrap_or(None)
         .map(|v| v == "true")
         .unwrap_or(false);
     let opts = ScanOptions {
-        detect_pitch,
+        key_detection,
         write_key_to_metadata,
     };
 
@@ -126,14 +139,26 @@ pub(crate) fn process_file(
 ) -> Result<bool, String> {
     let mut meta = metadata::extract(path)?;
 
-    // Audio pitch detection for keyless one-shots
-    if meta.musical_key.is_none()
-        && meta.sample_type.as_deref() == Some("one-shot")
-        && opts.detect_pitch
-    {
-        if let Some(key) = pitch::detect_key(path) {
-            meta.musical_key = Some(key);
-            meta.key_source = Some(KeySource::AudioPitch);
+    // Audio key detection when no key was found in filename or embedded metadata
+    if meta.musical_key.is_none() {
+        match opts.key_detection {
+            KeyDetection::Off => {}
+            KeyDetection::Yin => {
+                // YIN: monophonic pitch detection, one-shots only
+                if meta.sample_type.as_deref() == Some("one-shot") {
+                    if let Some(key) = pitch::detect_key_yin(path) {
+                        meta.musical_key = Some(key);
+                        meta.key_source = Some(KeySource::AudioPitch);
+                    }
+                }
+            }
+            KeyDetection::Ks => {
+                // K-S: harmonic analysis, works on any sample type
+                if let Some(key) = pitch::detect_key_ks(path) {
+                    meta.musical_key = Some(key);
+                    meta.key_source = Some(KeySource::AudioPitch);
+                }
+            }
         }
     }
 
@@ -181,6 +206,7 @@ pub(crate) fn is_audio_file(path: &Path) -> bool {
 mod tests {
     use super::*;
     use crate::db::DbPool;
+    use std::f32::consts::PI;
     use std::sync::Arc;
     use tempfile::tempdir;
 
@@ -192,25 +218,25 @@ mod tests {
 
     fn no_opts() -> ScanOptions {
         ScanOptions {
-            detect_pitch: false,
+            key_detection: KeyDetection::Off,
             write_key_to_metadata: false,
         }
     }
 
     fn make_wav() -> Vec<u8> {
-        let data_size = 2u32; // 1 sample, 16-bit
+        let data_size = 2u32;
         let mut v = Vec::new();
         v.extend_from_slice(b"RIFF");
         v.extend_from_slice(&(36u32 + data_size).to_le_bytes());
         v.extend_from_slice(b"WAVE");
         v.extend_from_slice(b"fmt ");
         v.extend_from_slice(&16u32.to_le_bytes());
-        v.extend_from_slice(&1u16.to_le_bytes()); // PCM
-        v.extend_from_slice(&1u16.to_le_bytes()); // mono
+        v.extend_from_slice(&1u16.to_le_bytes());
+        v.extend_from_slice(&1u16.to_le_bytes());
         v.extend_from_slice(&44100u32.to_le_bytes());
-        v.extend_from_slice(&88200u32.to_le_bytes()); // byte rate
-        v.extend_from_slice(&2u16.to_le_bytes()); // block align
-        v.extend_from_slice(&16u16.to_le_bytes()); // 16 bits
+        v.extend_from_slice(&88200u32.to_le_bytes());
+        v.extend_from_slice(&2u16.to_le_bytes());
+        v.extend_from_slice(&16u16.to_le_bytes());
         v.extend_from_slice(b"data");
         v.extend_from_slice(&data_size.to_le_bytes());
         v.extend_from_slice(&[0u8; 2]);
@@ -223,7 +249,7 @@ mod tests {
         let mut pcm = Vec::new();
         for i in 0..num_samples {
             let t = i as f32 / sample_rate as f32;
-            let s = ((2.0 * std::f32::consts::PI * freq * t).sin() * 32767.0) as i16;
+            let s = ((2.0 * PI * freq * t).sin() * 32767.0) as i16;
             pcm.extend_from_slice(&s.to_le_bytes());
         }
         let mut v = Vec::new();
@@ -244,10 +270,38 @@ mod tests {
         v
     }
 
-    /// WAV with a minimal embedded ID3v2.3 tag so write_key_to_file can write to it.
+    /// WAV with a chord (sum of sine waves), mono 16-bit PCM.
+    fn make_chord_wav(freqs: &[f32], sample_rate: u32, duration_ms: u32) -> Vec<u8> {
+        let num_samples = (sample_rate as f32 * duration_ms as f32 / 1000.0) as u32;
+        let data_size = num_samples * 2;
+        let mut pcm = Vec::new();
+        for i in 0..num_samples {
+            let t = i as f32 / sample_rate as f32;
+            let s: f32 =
+                freqs.iter().map(|&f| (2.0 * PI * f * t).sin()).sum::<f32>() / freqs.len() as f32;
+            pcm.extend_from_slice(&((s * 32767.0) as i16).to_le_bytes());
+        }
+        let mut v = Vec::new();
+        v.extend_from_slice(b"RIFF");
+        v.extend_from_slice(&(36 + data_size).to_le_bytes());
+        v.extend_from_slice(b"WAVE");
+        v.extend_from_slice(b"fmt ");
+        v.extend_from_slice(&16u32.to_le_bytes());
+        v.extend_from_slice(&1u16.to_le_bytes());
+        v.extend_from_slice(&1u16.to_le_bytes());
+        v.extend_from_slice(&sample_rate.to_le_bytes());
+        v.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+        v.extend_from_slice(&2u16.to_le_bytes());
+        v.extend_from_slice(&16u16.to_le_bytes());
+        v.extend_from_slice(b"data");
+        v.extend_from_slice(&data_size.to_le_bytes());
+        v.extend_from_slice(&pcm);
+        v
+    }
+
     fn make_tagged_wav() -> Vec<u8> {
         let id3: &[u8] = &[b'I', b'D', b'3', 3, 0, 0, 0, 0, 0, 0];
-        let id3_size = id3.len() as u32; // 10
+        let id3_size = id3.len() as u32;
         let pcm_size = 2u32;
         let riff_size = 4 + (8 + id3_size) + 24 + (8 + pcm_size);
         let mut v = Vec::new();
@@ -355,15 +409,14 @@ mod tests {
     }
 
     #[test]
-    fn process_file_detect_pitch_silent_one_shot_no_key() {
-        // Silent 1-sample WAV is a one-shot; YIN needs >2048 samples so returns None
+    fn process_file_yin_silent_one_shot_no_key() {
         let db = make_db();
         let dir = tempdir().unwrap();
         let path = dir.path().join("silent.wav");
         std::fs::write(&path, make_wav()).unwrap();
         let now = chrono::Utc::now().to_rfc3339();
         let opts = ScanOptions {
-            detect_pitch: true,
+            key_detection: KeyDetection::Yin,
             write_key_to_metadata: false,
         };
         assert!(process_file(&path, &db, &now, opts).unwrap());
@@ -372,15 +425,14 @@ mod tests {
     }
 
     #[test]
-    fn process_file_detect_pitch_tonal_one_shot_detects_key() {
+    fn process_file_yin_tonal_one_shot_detects_key() {
         let db = make_db();
         let dir = tempdir().unwrap();
-        // 500 ms of A4 (440 Hz) — one-shot duration, long enough for YIN
         let path = dir.path().join("a440.wav");
         std::fs::write(&path, make_sine_wav(440.0, 44100, 500)).unwrap();
         let now = chrono::Utc::now().to_rfc3339();
         let opts = ScanOptions {
-            detect_pitch: true,
+            key_detection: KeyDetection::Yin,
             write_key_to_metadata: false,
         };
         process_file(&path, &db, &now, opts).unwrap();
@@ -389,33 +441,63 @@ mod tests {
     }
 
     #[test]
-    fn process_file_detect_pitch_skipped_when_key_already_known() {
-        // File has key in filename → detect_pitch should not overwrite it
+    fn process_file_yin_skipped_when_key_already_known() {
         let db = make_db();
         let dir = tempdir().unwrap();
         let path = dir.path().join("pad_Cm_warm.wav");
         std::fs::write(&path, make_sine_wav(440.0, 44100, 500)).unwrap();
         let now = chrono::Utc::now().to_rfc3339();
         let opts = ScanOptions {
-            detect_pitch: true,
+            key_detection: KeyDetection::Yin,
             write_key_to_metadata: false,
         };
         process_file(&path, &db, &now, opts).unwrap();
         let samples = db.list_samples(None, None, None).unwrap();
-        // Key from filename wins; pitch detection branch is not entered
         assert_eq!(samples[0].musical_key.as_deref(), Some("Cm"));
     }
 
     #[test]
+    fn process_file_ks_tonal_detects_key() {
+        let db = make_db();
+        let dir = tempdir().unwrap();
+        // C major chord (C4+E4+G4), 2 s — enough for K-S analysis
+        let path = dir.path().join("c_major.wav");
+        std::fs::write(&path, make_chord_wav(&[261.63, 329.63, 392.0], 44100, 2000)).unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let opts = ScanOptions {
+            key_detection: KeyDetection::Ks,
+            write_key_to_metadata: false,
+        };
+        process_file(&path, &db, &now, opts).unwrap();
+        let samples = db.list_samples(None, None, None).unwrap();
+        assert_eq!(samples[0].musical_key.as_deref(), Some("C"));
+    }
+
+    #[test]
+    fn process_file_ks_silent_no_key() {
+        let db = make_db();
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("silent.wav");
+        std::fs::write(&path, make_wav()).unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let opts = ScanOptions {
+            key_detection: KeyDetection::Ks,
+            write_key_to_metadata: false,
+        };
+        process_file(&path, &db, &now, opts).unwrap();
+        let samples = db.list_samples(None, None, None).unwrap();
+        assert!(samples[0].musical_key.is_none());
+    }
+
+    #[test]
     fn process_file_write_key_to_metadata_no_key_skips() {
-        // No key in filename or audio → write-back if let doesn't match
         let db = make_db();
         let dir = tempdir().unwrap();
         let path = dir.path().join("kick_128bpm.wav");
         std::fs::write(&path, make_wav()).unwrap();
         let now = chrono::Utc::now().to_rfc3339();
         let opts = ScanOptions {
-            detect_pitch: false,
+            key_detection: KeyDetection::Off,
             write_key_to_metadata: true,
         };
         assert!(process_file(&path, &db, &now, opts).is_ok());
@@ -423,14 +505,13 @@ mod tests {
 
     #[test]
     fn process_file_write_key_to_metadata_success() {
-        // Filename provides key + tagged WAV → write-back succeeds
         let db = make_db();
         let dir = tempdir().unwrap();
         let path = dir.path().join("pad_Am_loop.wav");
         std::fs::write(&path, make_tagged_wav()).unwrap();
         let now = chrono::Utc::now().to_rfc3339();
         let opts = ScanOptions {
-            detect_pitch: false,
+            key_detection: KeyDetection::Off,
             write_key_to_metadata: true,
         };
         assert!(process_file(&path, &db, &now, opts).is_ok());
@@ -438,18 +519,15 @@ mod tests {
 
     #[test]
     fn process_file_write_key_to_metadata_failure_warns_and_continues() {
-        // Filename provides key but file has no writable tag → warn log, still returns Ok
         let db = make_db();
         let dir = tempdir().unwrap();
-        // Use .bin extension so lofty can't identify format → write_key_to_file returns Err
         let path = dir.path().join("Am_pad.bin");
         std::fs::write(&path, b"garbage content").unwrap();
         let now = chrono::Utc::now().to_rfc3339();
         let opts = ScanOptions {
-            detect_pitch: false,
+            key_detection: KeyDetection::Off,
             write_key_to_metadata: true,
         };
-        // Even if write fails, process_file should succeed (just logs a warning)
         assert!(process_file(&path, &db, &now, opts).is_ok());
     }
 
