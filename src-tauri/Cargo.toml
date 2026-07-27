@@ -1,6 +1,6 @@
 [package]
 name = "sample-manager"
-version = "0.1.5"
+version = "0.1.6"
 description = "Local audio sample library manager"
 authors = []
 edition = "2021"
