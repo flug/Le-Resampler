@@ -54,7 +54,7 @@ pub(crate) fn yin_pitch(samples: &[f32], sample_rate: u32, threshold: f32) -> Op
     for tau in tau_min..=tau_max {
         if d_prime[tau] < threshold {
             let mut t = tau;
-            while t + 1 <= tau_max && d_prime[t + 1] < d_prime[t] {
+            while t < tau_max && d_prime[t + 1] < d_prime[t] {
                 t += 1;
             }
             return Some(sample_rate as f32 / t as f32);
@@ -106,14 +106,14 @@ fn compute_chroma(samples: &[f32], sample_rate: u32) -> [f32; 12] {
         }
         fft.process(&mut buf);
 
-        for i in 1..=WINDOW / 2 {
+        for (i, bin) in buf.iter().enumerate().take(WINDOW / 2 + 1).skip(1) {
             let freq = i as f32 * sample_rate as f32 / WINDOW as f32;
-            if freq < 27.5 || freq > 4186.0 {
+            if !(27.5..=4186.0).contains(&freq) {
                 continue;
             }
             let midi = 12.0 * (freq / 440.0).log2() + 69.0;
             let pc = (midi.round() as i32).rem_euclid(12) as usize;
-            chroma[pc] += buf[i].norm_sqr();
+            chroma[pc] += bin.norm_sqr();
         }
 
         frame_count += 1;
