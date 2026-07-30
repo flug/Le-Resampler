@@ -1,16 +1,16 @@
 [package]
-name = "sample-manager"
+name = "le-resampler"
 version = "0.1.6"
 description = "Local audio sample library manager"
 authors = []
 edition = "2021"
 
 [lib]
-name = "sample_manager_lib"
+name = "le_resampler_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "sample-manager"
+name = "le-resampler"
 path = "src/main.rs"
 
 [build-dependencies]
