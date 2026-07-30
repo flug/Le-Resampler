@@ -7,6 +7,8 @@ let playingPath = null;
 let scanning = false;
 let selectedIds = new Set();
 let autoPlay = false;
+let sortCol = null;   // 'filename' | 'category' | 'bpm' | 'key' | 'duration' | 'type'
+let sortDir = 'asc';  // 'asc' | 'desc'
 
 // --- DOM refs ---
 const sampleList = document.getElementById('sample-list');
@@ -14,6 +16,7 @@ const emptyState = document.getElementById('empty-state');
 const sampleTable = document.getElementById('sample-table');
 const filterCategory = document.getElementById('filter-category');
 const filterTag = document.getElementById('filter-tag');
+const filterKeyEl = document.getElementById('filter-key');
 const searchInput = document.getElementById('search');
 const sampleCount = document.getElementById('sample-count');
 const nowPlaying = document.getElementById('now-playing');
@@ -191,6 +194,80 @@ btnAddFolder.addEventListener('click', async () => {
   }
 });
 
+// --- Key filter helpers ---
+function refreshKeyFilter() {
+  const prev = filterKeyEl.value;
+  const keys = [...new Set(samples.map(s => s.musical_key).filter(Boolean))].sort();
+  filterKeyEl.innerHTML = '<option value="">All Keys</option>';
+  for (const k of keys) {
+    const opt = document.createElement('option');
+    opt.value = k;
+    opt.textContent = k;
+    if (k === prev) opt.selected = true;
+    filterKeyEl.appendChild(opt);
+  }
+  if (prev && !keys.includes(prev)) filterKeyEl.value = '';
+}
+
+// --- Column sort helpers ---
+const SORT_FIELDS = {
+  filename: 'filename',
+  category: 'category',
+  bpm: 'bpm',
+  key: 'musical_key',
+  duration: 'duration_ms',
+  type: 'sample_type',
+};
+
+function applySort(arr) {
+  if (!sortCol) return arr;
+  const field = SORT_FIELDS[sortCol];
+  return [...arr].sort((a, b) => {
+    const av = a[field] ?? null;
+    const bv = b[field] ?? null;
+    if (av === null && bv === null) return 0;
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    const cmp = typeof av === 'number' && typeof bv === 'number'
+      ? av - bv
+      : String(av).localeCompare(String(bv));
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+}
+
+function updateSortHeaders() {
+  document.querySelectorAll('th.sortable').forEach(th => {
+    const col = th.dataset.sort;
+    th.classList.toggle('sort-active', col === sortCol);
+    const base = th.textContent.replace(/ [▲▼]$/, '');
+    th.textContent = col === sortCol ? `${base} ${sortDir === 'asc' ? '▲' : '▼'}` : base;
+  });
+}
+
+document.querySelectorAll('th.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.sort;
+    if (sortCol === col) {
+      if (sortDir === 'asc') sortDir = 'desc';
+      else { sortCol = null; sortDir = 'asc'; }
+    } else {
+      sortCol = col;
+      sortDir = 'asc';
+    }
+    updateSortHeaders();
+    renderSamples();
+  });
+});
+
+// --- Drag to DAW ---
+async function startFileDrag(paths) {
+  try {
+    await window.__TAURI__.drag.startDrag({ items: paths });
+  } catch (e) {
+    console.warn('Drag failed:', e);
+  }
+}
+
 // --- Load and render samples ---
 async function loadSamples() {
   try {
@@ -203,6 +280,7 @@ async function loadSamples() {
       filterTag: tag,
       search,
     });
+    refreshKeyFilter();
     renderSamples();
   } catch (e) {
     showError('Failed to load samples: ' + e);
@@ -211,13 +289,28 @@ async function loadSamples() {
 
 function renderSamples() {
   if (!settingsPanel.hidden) return;
-  sampleList.innerHTML = '';
-  const visible = samples.length > 0;
-  emptyState.hidden = visible;
-  sampleTable.style.display = visible ? '' : 'none';
-  sampleCount.textContent = visible ? `${samples.length} samples` : '';
 
-  for (const s of samples) {
+  // Apply client-side key filter then sort
+  const keyFilter = filterKeyEl.value;
+  const filtered = keyFilter ? samples.filter(s => s.musical_key === keyFilter) : samples;
+  const toRender = applySort(filtered);
+
+  sampleList.innerHTML = '';
+  const hasAny = samples.length > 0;
+  const hasFiltered = toRender.length > 0;
+  emptyState.hidden = hasAny;
+  sampleTable.style.display = hasAny ? '' : 'none';
+  if (hasAny) {
+    sampleCount.textContent = toRender.length !== samples.length
+      ? `${toRender.length} / ${samples.length} samples`
+      : `${samples.length} samples`;
+  } else {
+    sampleCount.textContent = '';
+  }
+
+  if (!hasFiltered) return;
+
+  for (const s of toRender) {
     const tr = document.createElement('tr');
     tr.className = 'sample-row'
       + (s.path === playingPath ? ' playing' : '')
@@ -254,6 +347,24 @@ function renderSamples() {
       renderSamples();
     });
     playTd.appendChild(btnPlay);
+
+    // Drag handle
+    const dragTd = document.createElement('td');
+    dragTd.className = 'col-drag';
+    const dragHandle = document.createElement('span');
+    dragHandle.className = 'drag-handle';
+    dragHandle.title = 'Drag to DAW';
+    dragHandle.textContent = '⠿';
+    dragHandle.addEventListener('mousedown', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const paths = selectedIds.has(s.id)
+        ? toRender.filter(x => selectedIds.has(x.id)).map(x => x.path)
+        : [s.path];
+      await startFileDrag(paths);
+    });
+    dragTd.appendChild(dragHandle);
+
     const categoryOptions = ['', 'kick', 'snare', 'hat', 'loop', 'vocal', 'fx', 'bass', 'perc']
       .map(c => `<option value="${c}" ${s.category === c ? 'selected' : ''}>${c || '—'}</option>`)
       .join('');
@@ -276,10 +387,11 @@ function renderSamples() {
     `;
     tr.appendChild(selectTd);
     tr.appendChild(playTd);
+    tr.appendChild(dragTd);
     tr.appendChild(contentDiv.content);
 
     tr.addEventListener('click', (e) => {
-      if (['INPUT', 'SELECT', 'BUTTON'].includes(e.target.tagName)) return;
+      if (['INPUT', 'SELECT', 'BUTTON', 'SPAN'].includes(e.target.tagName)) return;
       if (autoPlay) previewSample(s.path, s.filename);
     });
 
@@ -427,7 +539,6 @@ volumeSlider.addEventListener('input', async () => {
   }
 });
 
-// Appliquer le volume initial au démarrage
 invoke('set_volume', { volume: parseFloat(volumeSlider.value) }).catch(() => {});
 
 // --- Refresh button ---
@@ -460,6 +571,7 @@ autoplayCb.addEventListener('change', () => { autoPlay = autoplayCb.checked; });
 // --- Filters ---
 filterCategory.addEventListener('change', loadSamples);
 filterTag.addEventListener('change', loadSamples);
+filterKeyEl.addEventListener('change', renderSamples);
 
 let searchTimeout;
 searchInput.addEventListener('input', () => {
@@ -508,6 +620,26 @@ selectAll.addEventListener('change', () => {
 });
 
 // --- Export ---
+function setExportProgress(current, total) {
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  exportFab.style.setProperty('--export-progress', `${pct}%`);
+  const hue = Math.round((pct / 100) * 120); // red (0%) → green (100%)
+  exportFab.style.setProperty('--export-progress-color', `hsl(${hue}, 70%, 45%)`);
+  if (total > 0) {
+    exportFabLabel.textContent = `Exporting… ${current}/${total}`;
+  }
+}
+
+function resetExportProgress() {
+  exportFab.style.removeProperty('--export-progress');
+  exportFab.style.removeProperty('--export-progress-color');
+}
+
+await listen('export-progress', (event) => {
+  const { current, total } = event.payload;
+  setExportProgress(current, total);
+});
+
 async function exportSamples() {
   const dest = await invoke('pick_folder');
   if (!dest) return;
@@ -528,6 +660,7 @@ async function exportSamples() {
     }));
 
   exportFab.disabled = true;
+  resetExportProgress();
   try {
     const r = await invoke('copy_samples_to', { dest, samples: entries, template });
     const msg = `✓ ${r.copied} sample(s) copied${r.skipped ? `, ${r.skipped} skipped` : ''}`;
@@ -539,6 +672,7 @@ async function exportSamples() {
     showError('Export error: ' + e);
   } finally {
     exportFab.disabled = false;
+    resetExportProgress();
     updateExportButton();
   }
 }

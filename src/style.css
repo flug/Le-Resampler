@@ -74,6 +74,8 @@ body {
 #autoplay-wrap input { accent-color: var(--accent); cursor: pointer; }
 
 #export-fab {
+  position: relative;
+  overflow: hidden;
   margin-left: auto;
   background: #c0392b;
   color: white;
@@ -87,6 +89,19 @@ body {
 }
 #export-fab:hover { background: #e74c3c; }
 #export-fab:disabled { opacity: 0.5; cursor: not-allowed; }
+
+#export-fab-fill {
+  position: absolute;
+  inset: 0;
+  width: var(--export-progress, 0%);
+  background: var(--export-progress-color, #2ecc71);
+  transition: width 0.15s ease, background-color 0.15s ease;
+  z-index: 0;
+}
+#export-fab-label {
+  position: relative;
+  z-index: 1;
+}
 
 #search {
   background: var(--bg3);
@@ -147,6 +162,27 @@ th {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+th.sortable:hover { color: var(--text); }
+th.sort-active { color: var(--accent); }
+
+.col-drag { width: 22px; padding: 0 2px; text-align: center; }
+.drag-handle {
+  color: var(--text-muted);
+  cursor: grab;
+  font-size: 14px;
+  line-height: 1;
+  display: inline-block;
+  opacity: 0;
+  transition: opacity 0.1s;
+  user-select: none;
+}
+tr.sample-row:hover .drag-handle { opacity: 1; }
+.drag-handle:hover { color: var(--accent); }
 
 tr.sample-row {
   cursor: pointer;

@@ -27,8 +27,10 @@
       <option value="perc">Perc</option>
     </select>
     <select id="filter-tag"><option value="">All Tags</option></select>
+    <select id="filter-key"><option value="">All Keys</option></select>
     <span id="sample-count"></span>
     <button id="export-fab" hidden>
+      <span id="export-fab-fill"></span>
       <span id="export-fab-label">Export</span>
     </button>
   </header>
@@ -39,12 +41,13 @@
         <tr>
           <th class="col-select"><input type="checkbox" id="select-all" title="Select all"></th>
           <th class="col-play"></th>
-          <th>Filename</th>
-          <th>Category</th>
-          <th>BPM</th>
-          <th>Key</th>
-          <th>Duration</th>
-          <th>Type</th>
+          <th class="col-drag"></th>
+          <th class="sortable" data-sort="filename">Filename</th>
+          <th class="sortable" data-sort="category">Category</th>
+          <th class="sortable" data-sort="bpm">BPM</th>
+          <th class="sortable" data-sort="key">Key</th>
+          <th class="sortable" data-sort="duration">Duration</th>
+          <th class="sortable" data-sort="type">Type</th>
           <th>Tags</th>
         </tr>
       </thead>

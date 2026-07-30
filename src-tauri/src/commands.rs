@@ -2,7 +2,7 @@ use crate::audio::AudioPlayer;
 use crate::db::{DbPool, SampleRecord};
 use crate::scanner;
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_opener::OpenerExt;
 
 #[tauri::command]
@@ -124,10 +124,23 @@ pub async fn copy_samples_to(
     dest: String,
     samples: Vec<crate::export::ExportEntry>,
     template: String,
+    app: AppHandle,
 ) -> Result<crate::export::ExportResult, String> {
-    tokio::task::spawn_blocking(move || crate::export::copy_samples(&dest, &samples, &template))
-        .await
-        .map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        let total = samples.len();
+        let _ = app.emit(
+            "export-progress",
+            crate::export::ExportProgress { current: 0, total },
+        );
+        crate::export::copy_samples(&dest, &samples, &template, |current, total| {
+            let _ = app.emit(
+                "export-progress",
+                crate::export::ExportProgress { current, total },
+            );
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

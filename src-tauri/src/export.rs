@@ -19,6 +19,12 @@ pub struct ExportResult {
     pub errors: Vec<String>,
 }
 
+#[derive(Serialize, Clone)]
+pub struct ExportProgress {
+    pub current: usize,
+    pub total: usize,
+}
+
 pub fn resolve_path(template: &str, entry: &ExportEntry) -> PathBuf {
     let category = entry
         .category
@@ -42,36 +48,46 @@ pub fn resolve_path(template: &str, entry: &ExportEntry) -> PathBuf {
     PathBuf::from(s)
 }
 
-pub fn copy_samples(dest: &str, samples: &[ExportEntry], template: &str) -> ExportResult {
+pub fn copy_samples(
+    dest: &str,
+    samples: &[ExportEntry],
+    template: &str,
+    mut on_progress: impl FnMut(usize, usize),
+) -> ExportResult {
     let dest_path = Path::new(dest);
+    let total = samples.len();
     let mut copied = 0;
     let mut skipped = 0;
     let mut errors: Vec<String> = Vec::new();
 
-    for entry in samples {
+    for (i, entry) in samples.iter().enumerate() {
         let rel = resolve_path(template, entry);
         let dest_file = dest_path.join(&rel);
 
-        if let Some(parent) = dest_file.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                errors.push(format!("Cannot create folder {}: {}", parent.display(), e));
+        'entry: {
+            if let Some(parent) = dest_file.parent() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    errors.push(format!("Cannot create folder {}: {}", parent.display(), e));
+                    skipped += 1;
+                    break 'entry;
+                }
+            }
+
+            if dest_file.exists() {
                 skipped += 1;
-                continue;
+                break 'entry;
+            }
+
+            match std::fs::copy(&entry.path, &dest_file) {
+                Ok(_) => copied += 1,
+                Err(e) => {
+                    errors.push(format!("Cannot copy {}: {}", entry.path, e));
+                    skipped += 1;
+                }
             }
         }
 
-        if dest_file.exists() {
-            skipped += 1;
-            continue;
-        }
-
-        match std::fs::copy(&entry.path, &dest_file) {
-            Ok(_) => copied += 1,
-            Err(e) => {
-                errors.push(format!("Cannot copy {}: {}", entry.path, e));
-                skipped += 1;
-            }
-        }
+        on_progress(i + 1, total);
     }
 
     ExportResult {
@@ -164,7 +180,12 @@ mod tests {
             Some("kick"),
             vec![],
         )];
-        let r = copy_samples(dst_dir.path().to_str().unwrap(), &entries, DEFAULT);
+        let r = copy_samples(
+            dst_dir.path().to_str().unwrap(),
+            &entries,
+            DEFAULT,
+            |_, _| {},
+        );
 
         assert_eq!(r.copied, 1);
         assert_eq!(r.skipped, 0);
@@ -185,7 +206,12 @@ mod tests {
             None,
             vec!["groovy"],
         )];
-        let r = copy_samples(dst_dir.path().to_str().unwrap(), &entries, DEFAULT);
+        let r = copy_samples(
+            dst_dir.path().to_str().unwrap(),
+            &entries,
+            DEFAULT,
+            |_, _| {},
+        );
 
         assert_eq!(r.copied, 1);
         assert!(dst_dir.path().join("groovy").join("loop.wav").exists());
@@ -199,7 +225,12 @@ mod tests {
         write_file(&src, b"data");
 
         let entries = vec![entry(src.to_str().unwrap(), "unknown.wav", None, vec![])];
-        let r = copy_samples(dst_dir.path().to_str().unwrap(), &entries, DEFAULT);
+        let r = copy_samples(
+            dst_dir.path().to_str().unwrap(),
+            &entries,
+            DEFAULT,
+            |_, _| {},
+        );
 
         assert_eq!(r.copied, 1);
         assert!(dst_dir.path().join("misc").join("unknown.wav").exists());
@@ -221,7 +252,12 @@ mod tests {
             Some("kick"),
             vec![],
         )];
-        let r = copy_samples(dst_dir.path().to_str().unwrap(), &entries, DEFAULT);
+        let r = copy_samples(
+            dst_dir.path().to_str().unwrap(),
+            &entries,
+            DEFAULT,
+            |_, _| {},
+        );
 
         assert_eq!(r.copied, 0);
         assert_eq!(r.skipped, 1);
@@ -240,7 +276,12 @@ mod tests {
             Some("kick"),
             vec![],
         )];
-        let r = copy_samples(dst_dir.path().to_str().unwrap(), &entries, DEFAULT);
+        let r = copy_samples(
+            dst_dir.path().to_str().unwrap(),
+            &entries,
+            DEFAULT,
+            |_, _| {},
+        );
 
         assert_eq!(r.copied, 0);
         assert_eq!(r.skipped, 1);
@@ -260,7 +301,12 @@ mod tests {
             entry(kick.to_str().unwrap(), "kick.wav", Some("kick"), vec![]),
             entry(snare.to_str().unwrap(), "snare.wav", Some("snare"), vec![]),
         ];
-        let r = copy_samples(dst_dir.path().to_str().unwrap(), &entries, DEFAULT);
+        let r = copy_samples(
+            dst_dir.path().to_str().unwrap(),
+            &entries,
+            DEFAULT,
+            |_, _| {},
+        );
 
         assert_eq!(r.copied, 2);
         assert!(dst_dir.path().join("kick").join("kick.wav").exists());
@@ -280,7 +326,12 @@ mod tests {
             entry(k1.to_str().unwrap(), "kick1.wav", Some("kick"), vec![]),
             entry(k2.to_str().unwrap(), "kick2.wav", Some("kick"), vec![]),
         ];
-        let r = copy_samples(dst_dir.path().to_str().unwrap(), &entries, DEFAULT);
+        let r = copy_samples(
+            dst_dir.path().to_str().unwrap(),
+            &entries,
+            DEFAULT,
+            |_, _| {},
+        );
 
         assert_eq!(r.copied, 2);
         assert!(dst_dir.path().join("kick").join("kick1.wav").exists());
@@ -301,6 +352,7 @@ mod tests {
             dst_dir.path().to_str().unwrap(),
             &[e],
             "%category%/%key%/%filename%",
+            |_, _| {},
         );
 
         assert_eq!(r.copied, 1);
