@@ -1,6 +1,6 @@
 [package]
 name = "le-resampler"
-version = "0.1.8"
+version = "0.1.9"
 description = "Local audio sample library manager"
 authors = []
 edition = "2021"
