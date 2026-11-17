@@ -1,4 +1,6 @@
-use lofty::{AudioFile, ItemKey, Probe, TaggedFileExt};
+use lofty::config::WriteOptions;
+use lofty::prelude::{AudioFile, ItemKey, TaggedFileExt};
+use lofty::probe::Probe;
 use regex::Regex;
 use std::path::Path;
 
@@ -37,12 +39,12 @@ pub fn extract(path: &Path) -> Result<ExtractedMeta, String> {
                 .or_else(|| tagged_file.first_tag());
 
             let bpm = tag
-                .and_then(|t| t.get_string(&ItemKey::Bpm))
+                .and_then(|t| t.get_string(ItemKey::Bpm))
                 .and_then(|s| s.parse::<f64>().ok())
                 .filter(|&v| v > 0.0);
 
             let key = tag
-                .and_then(|t| t.get_string(&ItemKey::InitialKey))
+                .and_then(|t| t.get_string(ItemKey::InitialKey))
                 .map(|s| s.to_string())
                 .filter(|s| !s.is_empty());
 
@@ -185,7 +187,9 @@ pub fn write_key_to_file(path: &Path, key: &str) -> Result<(), String> {
         tag.insert_text(ItemKey::InitialKey, key.to_string());
     }
 
-    tagged_file.save_to_path(path).map_err(|e| e.to_string())
+    tagged_file
+        .save_to_path(path, WriteOptions::default())
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -276,7 +280,7 @@ mod tests {
         let tagged = Probe::open(&path).unwrap().read().unwrap();
         let key = tagged
             .primary_tag()
-            .and_then(|t| t.get_string(&ItemKey::InitialKey))
+            .and_then(|t| t.get_string(ItemKey::InitialKey))
             .map(str::to_string);
         assert_eq!(key, Some("Am".to_string()));
     }
