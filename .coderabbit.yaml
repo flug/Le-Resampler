@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!src-tauri/target/**"
+    - "!src-tauri/gen/**"
+    - "!src-tauri/icons/**"
+    - "!**/Cargo.lock"
+    - "!**/*.db"
+  path_instructions:
+    - path: "src-tauri/src/**/*.rs"
+      instructions: |
+        - Coverage is enforced at 100% (tarpaulin `fail_under = 100`). New business logic must live in a
+          testable helper with unit tests, not in `commands.rs`, `lib.rs`, `main.rs`, `audio_thread` or
+          `scan_folder_sync` (all excluded from coverage).
+        - Code must pass `cargo fmt --check` and `cargo clippy --lib --tests -- -D warnings`.
+        - Tests that need a database should use `DbPool::new_in_memory()`.
+    - path: "src-tauri/src/commands.rs"
+      instructions: |
+        Tauri IPC commands must stay thin wrappers that delegate to testable functions in other modules.
+        Command parameters are snake_case; the frontend calls them with camelCase args.
+    - path: "src-tauri/src/audio.rs"
+      instructions: |
+        rodio gotcha: `player.clear()` internally calls `pause()`, so `player.play()` must always be
+        called after `player.append()`.
+    - path: "src/**/*.{js,html}"
+      instructions: |
+        Vanilla JS ES modules with no bundler or framework; do not suggest adding build tooling.
+        In Tauri WebviewWindows, external links must go through `invoke('open_url')`, never `target="_blank"`.
+    - path: ".github/workflows/**"
+      instructions: |
+        `release.yml` bumps versions in both `tauri.conf.json` and `Cargo.toml`; flag changes that
+        could desynchronise them or break the Homebrew tap update.
+
+chat:
+  auto_reply: true
