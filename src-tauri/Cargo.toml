@@ -23,7 +23,7 @@ walkdir = "2"
 lofty = "0.25"
 rodio = { version = "0.23", features = ["symphonia-all"] }
 rustfft = "6"
-rusqlite = { version = "0.41", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
